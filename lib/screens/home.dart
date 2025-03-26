@@ -1,8 +1,9 @@
 import 'dart:math';
-
 import 'package:flutter/material.dart';
-import 'package:studybuddy_app/components/navbar.dart';
 import 'package:studybuddy_app/screens/profile_screen.dart';
+import 'package:studybuddy_app/screens/rooms_screen.dart';
+import 'package:studybuddy_app/screens/resources_screen.dart';
+import 'package:studybuddy_app/screens/career_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   @override
@@ -13,7 +14,6 @@ class _HomeScreenState extends State<HomeScreen> {
   int _currentStreak = 5;
   int _studyHours = 12;
   double _efficiency = 0.87;
-  int _selectedTab = 0;
   bool _isRefreshingQuote = false;
   String _motivationalQuote = '"Success is the sum of small efforts, repeated day in and day out."';
   String _quoteAuthor = '- Robert Collier';
@@ -87,16 +87,6 @@ class _HomeScreenState extends State<HomeScreen> {
             _buildMotivationSection(context),
           ],
         ),
-      ),
-      bottomNavigationBar: MainBottomNavBar(
-        currentIndex: _selectedTab,
-        onTap: (index) {
-          setState(() {
-            _selectedTab = index;
-          });
-          Feedback.forTap(context);
-          // Add actual navigation logic here
-        },
       ),
     );
   }
@@ -557,90 +547,89 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildMotivationSection(BuildContext context) {
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            'DAILY MOTIVATION',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey[500],
-              letterSpacing: 1,
-            ),
-          ),
-          IconButton(
-            icon: _isRefreshingQuote
-                ? SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Icon(Icons.refresh, size: 18, color: Colors.grey[500]),
-            onPressed: () {
-              if (_isRefreshingQuote) return;
-              
-              setState(() => _isRefreshingQuote = true);
-              Feedback.forTap(context);
-              
-              // Simulate network delay
-              Future.delayed(Duration(seconds: 1), () {
-                final randomQuote = _quotes..shuffle();
-                final quoteString = randomQuote.first;
-                final quoteParts = quoteString.split(' - ');
-                setState(() {
-                  _motivationalQuote = quoteParts[0];
-                  _quoteAuthor = quoteParts.length > 1 ? '- ${quoteParts[1]}' : '';
-                  _isRefreshingQuote = false;
-                });
-              });
-            },
-          ),
-        ],
-      ),
-      SizedBox(height: 12),
-      Container(
-        padding: EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              _motivationalQuote,
+              'DAILY MOTIVATION',
               style: TextStyle(
-                fontSize: 16,
-                fontStyle: FontStyle.italic,
-                color: Colors.grey[800],
-                height: 1.4,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[500],
+                letterSpacing: 1,
               ),
-              textAlign: TextAlign.center,
             ),
-            SizedBox(height: 8),
-            Text(
-              _quoteAuthor,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[600],
-              ),
+            IconButton(
+              icon: _isRefreshingQuote
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(Icons.refresh, size: 18, color: Colors.grey[500]),
+              onPressed: () {
+                if (_isRefreshingQuote) return;
+                
+                setState(() => _isRefreshingQuote = true);
+                Feedback.forTap(context);
+                
+                Future.delayed(Duration(seconds: 1), () {
+                  final randomQuote = _quotes..shuffle();
+                  final quoteString = randomQuote.first;
+                  final quoteParts = quoteString.split(' - ');
+                  setState(() {
+                    _motivationalQuote = quoteParts[0];
+                    _quoteAuthor = quoteParts.length > 1 ? '- ${quoteParts[1]}' : '';
+                    _isRefreshingQuote = false;
+                  });
+                });
+              },
             ),
           ],
         ),
-      ),
-    ],
-  );
-}
+        SizedBox(height: 12),
+        Container(
+          padding: EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              Text(
+                _motivationalQuote,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontStyle: FontStyle.italic,
+                  color: Colors.grey[800],
+                  height: 1.4,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: 8),
+              Text(
+                _quoteAuthor,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class ProgressChartPainter extends CustomPainter {
@@ -659,7 +648,6 @@ class ProgressChartPainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.width / 3;
     
-    // Draw background circle
     final bgPaint = Paint()
       ..color = Colors.grey[200]!
       ..style = PaintingStyle.stroke
@@ -667,7 +655,6 @@ class ProgressChartPainter extends CustomPainter {
     
     canvas.drawCircle(center, radius, bgPaint);
     
-    // Draw streak progress
     final streakPaint = Paint()
       ..color = Colors.orange[300]!
       ..style = PaintingStyle.stroke
@@ -683,7 +670,6 @@ class ProgressChartPainter extends CustomPainter {
       streakPaint,
     );
     
-    // Draw hours progress
     final hoursPaint = Paint()
       ..color = Colors.green[300]!
       ..style = PaintingStyle.stroke
@@ -699,7 +685,6 @@ class ProgressChartPainter extends CustomPainter {
       hoursPaint,
     );
     
-    // Draw efficiency progress
     final efficiencyPaint = Paint()
       ..color = Colors.blue[300]!
       ..style = PaintingStyle.stroke
@@ -715,7 +700,6 @@ class ProgressChartPainter extends CustomPainter {
       efficiencyPaint,
     );
     
-    // Draw center text
     final textPainter = TextPainter(
       text: TextSpan(
         text: 'Progress',

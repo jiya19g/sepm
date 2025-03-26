@@ -75,36 +75,8 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
         child: Icon(Icons.add),
         onPressed: () => _showUploadDialog(context),
       ),
-      bottomNavigationBar: MainBottomNavBar(
-        currentIndex: 2,
-        onTap: (index) {
-          setState(() {
-            Navigator.popUntil(context, (route) => route.isFirst);
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => _getScreen(index)),
-            );
-          });
-        },
-      ),
     );
   }
-
-  Widget _getScreen(int index) {
-    switch (index) {
-      case 0:
-        return HomeScreen();
-      case 1:
-        return RoomsScreen();
-      case 2:
-        return ResourcesScreen();
-      case 3:
-        return CareerScreen();
-      default:
-        return HomeScreen();
-    }
-  }
-
   void _openResource(BuildContext context, Map<String, dynamic> resource) {
     Navigator.push(
       context,

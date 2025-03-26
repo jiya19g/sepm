@@ -16,7 +16,6 @@ class CareerScreen extends StatelessWidget {
         ),
         child: Center(child: Text('Career Content', style: TextStyle(color: Colors.white))),
       ),
-      bottomNavigationBar: MainBottomNavBar(currentIndex: 3, onTap: (index) {}),
     );
   }
 }

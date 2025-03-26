@@ -1,8 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:studybuddy_app/components/navbar.dart';
-import 'package:studybuddy_app/screens/career_screen.dart';
-import 'package:studybuddy_app/screens/home.dart';
-import 'package:studybuddy_app/screens/resources_screen.dart';
 
 class RoomsScreen extends StatefulWidget {
   @override
@@ -16,21 +12,24 @@ class _RoomsScreenState extends State<RoomsScreen> {
       'members': 12,
       'active': true,
       'subject': 'Math',
-      'lastActive': '2 min ago'
+      'lastActive': '2 min ago',
+      'description': 'Advanced calculus discussions'
     },
     {
       'name': 'Physics Study',
       'members': 8,
       'active': false,
       'subject': 'Physics',
-      'lastActive': '1 hour ago'
+      'lastActive': '1 hour ago',
+      'description': 'Quantum mechanics topics'
     },
     {
       'name': 'CS Fundamentals',
       'members': 15,
       'active': true,
       'subject': 'Computer Science',
-      'lastActive': 'Just now'
+      'lastActive': 'Just now',
+      'description': 'Algorithms and data structures'
     },
   ];
 
@@ -42,13 +41,14 @@ class _RoomsScreenState extends State<RoomsScreen> {
         actions: [
           IconButton(
             icon: Icon(Icons.search),
-            onPressed: () {
-              showSearch(context: context, delegate: RoomSearchDelegate());
-            },
+            onPressed: () => showSearch(
+              context: context,
+              delegate: RoomSearchDelegate(rooms: _studyRooms),
+            ),
           ),
           IconButton(
             icon: Icon(Icons.add),
-            onPressed: () => _showCreateRoomDialog(context),
+            onPressed: _showCreateRoomDialog,
           ),
         ],
       ),
@@ -83,36 +83,7 @@ class _RoomsScreenState extends State<RoomsScreen> {
                 itemCount: _studyRooms.length,
                 itemBuilder: (context, index) {
                   final room = _studyRooms[index];
-                  return Card(
-                    color: Colors.white.withOpacity(0.1),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: _getSubjectColor(room['subject']),
-                        child: Text(room['subject'][0]),
-                      ),
-                      title: Text(
-                        room['name'],
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      subtitle: Text(
-                        '${room['members']} members • ${room['lastActive']}',
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                      trailing: room['active']
-                          ? Chip(
-                              label: Text('Active'),
-                              backgroundColor: Colors.green,
-                            )
-                          : null,
-                      onTap: () => _joinRoom(context, room),
-                    ),
-                  );
+                  return _buildRoomCard(room);
                 },
               ),
             ),
@@ -121,52 +92,54 @@ class _RoomsScreenState extends State<RoomsScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         child: Icon(Icons.add),
-        onPressed: () => _showCreateRoomDialog(context),
-      ),
-      bottomNavigationBar: MainBottomNavBar(
-        currentIndex: 1,
-        onTap: (index) {
-          setState(() {
-            Navigator.popUntil(context, (route) => route.isFirst);
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => _getScreen(index)),
-            );
-          });
-        },
+        onPressed: _showCreateRoomDialog,
       ),
     );
   }
 
-  Widget _getScreen(int index) {
-    switch (index) {
-      case 0:
-        return HomeScreen();
-      case 1:
-        return RoomsScreen();
-      case 2:
-        return ResourcesScreen();
-      case 3:
-        return CareerScreen();
-      default:
-        return HomeScreen();
-    }
+  Widget _buildRoomCard(Map<String, dynamic> room) {
+    return Card(
+      color: Colors.white.withOpacity(0.1),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: _getSubjectColor(room['subject']),
+          child: Text(room['subject'][0]),
+        ),
+        title: Text(
+          room['name'],
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        subtitle: Text(
+          '${room['members']} members • ${room['lastActive']}',
+          style: TextStyle(color: Colors.white70),
+        ),
+        trailing: room['active']
+            ? Chip(
+                label: Text('Active'),
+                backgroundColor: Colors.green,
+              )
+            : null,
+        onTap: () => _joinRoom(room),
+      ),
+    );
   }
 
   Color _getSubjectColor(String subject) {
     switch (subject) {
-      case 'Math':
-        return Colors.blue;
-      case 'Physics':
-        return Colors.red;
-      case 'Computer Science':
-        return Colors.green;
-      default:
-        return Colors.purple;
+      case 'Math': return Colors.blue;
+      case 'Physics': return Colors.red;
+      case 'Computer Science': return Colors.green;
+      default: return Colors.purple;
     }
   }
 
-  void _joinRoom(BuildContext context, Map<String, dynamic> room) {
+  void _joinRoom(Map<String, dynamic> room) {
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -175,7 +148,7 @@ class _RoomsScreenState extends State<RoomsScreen> {
     );
   }
 
-  void _showCreateRoomDialog(BuildContext context) {
+  void _showCreateRoomDialog() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -218,14 +191,16 @@ class _RoomsScreenState extends State<RoomsScreen> {
 }
 
 class RoomSearchDelegate extends SearchDelegate {
+  final List<Map<String, dynamic>> rooms;
+
+  RoomSearchDelegate({required this.rooms});
+
   @override
   List<Widget> buildActions(BuildContext context) {
     return [
       IconButton(
         icon: Icon(Icons.clear),
-        onPressed: () {
-          query = '';
-        },
+        onPressed: () => query = '',
       ),
     ];
   }
@@ -234,20 +209,75 @@ class RoomSearchDelegate extends SearchDelegate {
   Widget buildLeading(BuildContext context) {
     return IconButton(
       icon: Icon(Icons.arrow_back),
-      onPressed: () {
-        close(context, null);
-      },
+      onPressed: () => close(context, null),
     );
   }
 
   @override
   Widget buildResults(BuildContext context) {
-    return Center(child: Text('Search results for: $query'));
+    final results = rooms.where((room) =>
+        room['name'].toLowerCase().contains(query.toLowerCase()) ||
+        room['subject'].toLowerCase().contains(query.toLowerCase()));
+
+    return _buildResults(context, results.toList());
   }
 
   @override
   Widget buildSuggestions(BuildContext context) {
-    return Center(child: Text('Search suggestions'));
+    final suggestions = query.isEmpty
+        ? rooms
+        : rooms.where((room) =>
+            room['name'].toLowerCase().contains(query.toLowerCase()) ||
+            room['subject'].toLowerCase().contains(query.toLowerCase()));
+
+    return _buildResults(context, suggestions.toList());
+  }
+
+  Widget _buildResults(BuildContext context, List<Map<String, dynamic>> results) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFF0E0058), Color(0xFF370290)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: ListView.builder(
+        itemCount: results.length,
+        itemBuilder: (context, index) {
+          final room = results[index];
+          return ListTile(
+            leading: CircleAvatar(
+              backgroundColor: _getSubjectColor(room['subject']),
+              child: Text(room['subject'][0]),
+            ),
+            title: Text(room['name'], style: TextStyle(color: Colors.white)),
+            subtitle: Text(
+              '${room['members']} members • ${room['lastActive']}',
+              style: TextStyle(color: Colors.white70),
+            ),
+            onTap: () {
+              close(context, room);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => RoomDetailScreen(room: room),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Color _getSubjectColor(String subject) {
+    switch (subject) {
+      case 'Math': return Colors.blue;
+      case 'Physics': return Colors.red;
+      case 'Computer Science': return Colors.green;
+      default: return Colors.purple;
+    }
   }
 }
 
@@ -259,12 +289,55 @@ class RoomDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(room['name']),
-      ),
-      body: Center(
-        child: Text('Room Details: ${room['name']}'),
+      appBar: AppBar(title: Text(room['name'])),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF0E0058), Color(0xFF370290)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircleAvatar(
+                radius: 40,
+                backgroundColor: _getSubjectColor(room['subject']),
+                child: Text(
+                  room['subject'][0],
+                  style: TextStyle(fontSize: 36, color: Colors.white),
+                ),
+              ),
+              SizedBox(height: 20),
+              Text(
+                room['name'],
+                style: TextStyle(color: Colors.white, fontSize: 24),
+              ),
+              SizedBox(height: 10),
+              Text(
+                '${room['members']} members',
+                style: TextStyle(color: Colors.white70),
+              ),
+              SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () {},
+                child: Text('Join Room'),
+              ),
+            ],
+          ),
+        ),
       ),
     );
+  }
+
+  Color _getSubjectColor(String subject) {
+    switch (subject) {
+      case 'Math': return Colors.blue;
+      case 'Physics': return Colors.red;
+      case 'Computer Science': return Colors.green;
+      default: return Colors.purple;
+    }
   }
 }
