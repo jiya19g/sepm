@@ -1,21 +1,16 @@
-# 📱 StudyBuddy - Profile Screen  
+# StudyBuddy 📚  
 
-This Flutter Profile Screen provides a clean, modern UI for managing user details, settings, and study statistics.  
+A **Flutter**-based study collaboration app that allows users to create and join study rooms, track progress, and access educational resources.  
 
 ## ✨ Features  
-- **Profile Header** (Avatar, Name, Bio, Edit Profile)  
-- **Account Settings** (Email, Password, Phone)  
-- **Study Statistics** (Streak, Hours, Sessions, Avg. Grade)  
-- **App Settings** (Notifications, Dark Mode, Support, Logout)  
-- **Adaptive Dark Mode**  
+- **User Authentication** (Email, Social Login)  
+- **Study Rooms** (Chat, File Sharing, To-Do Lists)  
+- **Progress Tracking** (Streaks, Study Hours, Leaderboard)  
+- **Resource Hub** (PDFs, Videos, Notes)  
+- **Career Corner** (Job Listings, Mentorship)  
+- **Dark Mode & Customization**  
 
-## 📌 How to Use  
-- Customize user data dynamically.  
-- Implement authentication for real user info.  
-- Enhance with profile image upload & logout confirmation.  
-
-## 🔧 Tech Stack  
-- **Flutter** (Material Design)  
-- **Dart**  
-
-🚀 Ready to integrate into StudyBuddy!
+## 🚀 Getting Started  
+1. Clone the repository:  
+   ```sh
+   git clone https://github.com/your-repo/studybuddy.git
