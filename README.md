@@ -1,16 +1,21 @@
-# studybuddy_app
+# 📱 StudyBuddy - Profile Screen  
 
-A new Flutter project.
+This Flutter Profile Screen provides a clean, modern UI for managing user details, settings, and study statistics.  
 
-## Getting Started
+## ✨ Features  
+- **Profile Header** (Avatar, Name, Bio, Edit Profile)  
+- **Account Settings** (Email, Password, Phone)  
+- **Study Statistics** (Streak, Hours, Sessions, Avg. Grade)  
+- **App Settings** (Notifications, Dark Mode, Support, Logout)  
+- **Adaptive Dark Mode**  
 
-This project is a starting point for a Flutter application.
+## 📌 How to Use  
+- Customize user data dynamically.  
+- Implement authentication for real user info.  
+- Enhance with profile image upload & logout confirmation.  
 
-A few resources to get you started if this is your first Flutter project:
+## 🔧 Tech Stack  
+- **Flutter** (Material Design)  
+- **Dart**  
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+🚀 Ready to integrate into StudyBuddy!
