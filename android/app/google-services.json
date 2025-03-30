@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "996620760601",
+    "project_id": "studybuddy-c99ab",
+    "storage_bucket": "studybuddy-c99ab.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:996620760601:android:0a48931005efacd5469c88",
+        "android_client_info": {
+          "package_name": "com.example.studybuddy_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC3CJ_6KrOvUJH4OcarA6GcP26scyThm-c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
