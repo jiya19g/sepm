@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:studybuddy_app/screens/profile_screen.dart';
 import 'package:studybuddy_app/screens/rooms_screen.dart';
 import 'package:studybuddy_app/screens/resources_screen.dart';
@@ -11,6 +12,11 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  String _userName = 'Alex'; // Default user name
+  String _userEmail = ''; // Will be updated with Firebase user email
+  String _profilePicture = ''; // Default profile picture
+  
   int _currentStreak = 5;
   int _studyHours = 12;
   double _efficiency = 0.87;
@@ -43,6 +49,30 @@ class _HomeScreenState extends State<HomeScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    final user = _auth.currentUser;
+    if (user != null) {
+      setState(() {
+        _userEmail = user.email ?? '';
+        _userName = user.displayName ?? 'User';
+      });
+    }
+  }
+
+  Future<void> _signOut() async {
+    try {
+      await _auth.signOut();
+    } catch (e) {
+      print('Error signing out: $e');
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[50],
@@ -58,14 +88,28 @@ class _HomeScreenState extends State<HomeScreen> {
         elevation: 0,
         actions: [
           IconButton(
+            icon: Icon(Icons.logout, color: Colors.grey[800]),
+            onPressed: _signOut,
+          ),
+          IconButton(
             icon: Icon(Icons.person, color: Colors.grey[800]),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ProfileScreen(),
-                fullscreenDialog: true,
-              ),
-            ),
+            onPressed: () async {
+              final userDetails = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ProfileScreen(),
+                  fullscreenDialog: true,
+                ),
+              );
+
+              if (userDetails != null) {
+                setState(() {
+                  _userName = userDetails['name'];
+                  _userEmail = userDetails['email'];
+                  _profilePicture = userDetails['profilePicture'];
+                });
+              }
+            },
           ),
         ],
       ),
@@ -92,94 +136,99 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildWelcomeSection(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        TweenAnimationBuilder(
-          tween: Tween<double>(begin: 0, end: 1),
-          duration: Duration(milliseconds: 300),
-          builder: (context, double value, child) {
-            return Opacity(
-              opacity: value,
-              child: Transform.translate(
-                offset: Offset(0, (1 - value) * 20),
-                child: child,
-              ),
-            );
-          },
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Welcome back,',
-                style: TextStyle(
-                  fontSize: 20,
-                  color: Colors.grey[600],
-                ),
-              ),
-              SizedBox(height: 4),
-              Text(
-                'Alex!',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.grey[900],
-                ),
-              ),
-              SizedBox(height: 8),
-              Text(
-                'Ready for a focused session?',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey[500],
-                ),
-              ),
-            ],
+    return Container(
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: Offset(0, 4),
           ),
-        ),
-      ],
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Welcome back,',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey[600],
+            ),
+          ),
+          SizedBox(height: 4),
+          Text(
+            _userName,
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[800],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildQuickActions(BuildContext context) {
-    return SizedBox(
-      height: 100,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: _quickActions.length,
-        separatorBuilder: (_, __) => SizedBox(width: 12),
-        itemBuilder: (context, index) {
-          return GestureDetector(
-            onTap: () {
-              Feedback.forTap(context);
-              _showQuickActionDialog(context, _quickActions[index]['label']);
-            },
-            child: Container(
-              width: 80,
-              decoration: BoxDecoration(
-                color: _quickActions[index]['color'] as Color,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(_quickActions[index]['icon'] as IconData, 
-                      size: 28, color: Colors.grey[800]),
-                  SizedBox(height: 8),
-                  Text(
-                    _quickActions[index]['label'] as String,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Quick Actions',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.grey[800],
+          ),
+        ),
+        SizedBox(height: 16),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 16,
+            childAspectRatio: 1.5,
+          ),
+          itemCount: _quickActions.length,
+          itemBuilder: (context, index) {
+            final action = _quickActions[index];
+            return InkWell(
+              onTap: () => _showQuickActionDialog(context, action['label']),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: action['color'],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      action['icon'],
+                      size: 32,
                       color: Colors.grey[800],
                     ),
-                  ),
-                ],
+                    SizedBox(height: 8),
+                    Text(
+                      action['label'],
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey[800],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          );
-        },
-      ),
+            );
+          },
+        ),
+      ],
     );
   }
 
@@ -187,8 +236,8 @@ class _HomeScreenState extends State<HomeScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('$action Selected'),
-        content: Text('This would open the $action feature in a full implementation.'),
+        title: Text('Quick Action: $action'),
+        content: Text('This feature is coming soon!'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -203,135 +252,69 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'TODAY\'S TASKS',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: Colors.grey[500],
-            letterSpacing: 1,
-          ),
-        ),
-        SizedBox(height: 12),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 10,
-                offset: Offset(0, 4),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Today\'s Tasks',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey[800],
               ),
-            ],
-          ),
-          child: Column(
-            children: [
-              ..._tasks.map((task) {
-                return Dismissible(
-                  key: Key(task['id'].toString()),
-                  background: Container(
-                    color: Colors.red[100],
-                    alignment: Alignment.centerLeft,
-                    padding: EdgeInsets.only(left: 20),
-                    child: Icon(Icons.delete, color: Colors.red),
-                  ),
-                  secondaryBackground: Container(
-                    color: Colors.green[100],
-                    alignment: Alignment.centerRight,
-                    padding: EdgeInsets.only(right: 20),
-                    child: Icon(Icons.archive, color: Colors.green),
-                  ),
-                  onDismissed: (direction) {
+            ),
+            IconButton(
+              icon: Icon(Icons.add),
+              onPressed: () => _showAddTaskDialog(context),
+            ),
+          ],
+        ),
+        SizedBox(height: 16),
+        ListView.builder(
+          shrinkWrap: true,
+          physics: NeverScrollableScrollPhysics(),
+          itemCount: _tasks.length,
+          itemBuilder: (context, index) {
+            final task = _tasks[index];
+            return Container(
+              margin: EdgeInsets.only(bottom: 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: ListTile(
+                leading: Checkbox(
+                  value: task['completed'],
+                  onChanged: (value) {
                     setState(() {
-                      _tasks.removeWhere((t) => t['id'] == task['id']);
+                      _tasks[index]['completed'] = value;
                     });
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Task ${task['title']} dismissed'),
-                        action: SnackBarAction(
-                          label: 'UNDO',
-                          onPressed: () {
-                            setState(() {
-                              _tasks.add(task);
-                            });
-                          },
-                        ),
-                      ),
-                    );
                   },
-                  child: ListTile(
-                    leading: Checkbox(
-                      value: task['completed'] as bool,
-                      onChanged: (value) {
-                        setState(() {
-                          task['completed'] = value;
-                          if (value == true) {
-                            _currentStreak++;
-                            _studyHours += 2;
-                            _efficiency = (_efficiency + 0.01).clamp(0.0, 1.0);
-                          }
-                        });
-                      },
-                      activeColor: Colors.blue[400],
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                    title: Text(
-                      task['title'] as String,
-                      style: TextStyle(
-                        decoration: task['completed'] as bool 
-                            ? TextDecoration.lineThrough 
-                            : null,
-                        color: task['completed'] as bool 
-                            ? Colors.grey[400] 
-                            : Colors.grey[800],
-                      ),
-                    ),
-                    trailing: PopupMenuButton<String>(
-                      icon: Icon(Icons.more_vert, color: Colors.grey[400], size: 20),
-                      itemBuilder: (context) => [
-                        PopupMenuItem(
-                          value: 'edit',
-                          child: Text('Edit'),
-                        ),
-                        PopupMenuItem(
-                          value: 'delete',
-                          child: Text('Delete'),
-                        ),
-                      ],
-                      onSelected: (value) {
-                        if (value == 'delete') {
-                          setState(() {
-                            _tasks.removeWhere((t) => t['id'] == task['id']);
-                          });
-                        }
-                      },
-                    ),
-                  ),
-                );
-              }).toList(),
-              ListTile(
-                leading: Icon(Icons.add, color: Colors.blue[400], size: 20),
+                ),
                 title: Text(
-                  'Add new task',
+                  task['title'],
                   style: TextStyle(
-                    color: Colors.blue[400],
-                    fontWeight: FontWeight.w500,
+                    decoration: task['completed'] ? TextDecoration.lineThrough : null,
                   ),
                 ),
-                onTap: () => _showAddTaskDialog(context),
+                trailing: IconButton(
+                  icon: Icon(Icons.delete),
+                  onPressed: () {
+                    setState(() {
+                      _tasks.removeAt(index);
+                    });
+                  },
+                ),
               ),
-            ],
-          ),
+            );
+          },
         ),
       ],
     );
   }
 
   void _showAddTaskDialog(BuildContext context) {
-    TextEditingController _taskController = TextEditingController();
+    final TextEditingController _taskController = TextEditingController();
 
     showDialog(
       context: context,
@@ -341,7 +324,6 @@ class _HomeScreenState extends State<HomeScreen> {
           controller: _taskController,
           decoration: InputDecoration(
             hintText: 'Enter task description',
-            border: OutlineInputBorder(),
           ),
         ),
         actions: [
@@ -349,7 +331,7 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () => Navigator.pop(context),
             child: Text('Cancel'),
           ),
-          ElevatedButton(
+          TextButton(
             onPressed: () {
               if (_taskController.text.isNotEmpty) {
                 setState(() {
@@ -374,82 +356,75 @@ class _HomeScreenState extends State<HomeScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'STUDY PROGRESS',
+          'Your Progress',
           style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: Colors.grey[500],
-            letterSpacing: 1,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.grey[800],
           ),
         ),
-        SizedBox(height: 12),
-        Container(
-          padding: EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 10,
-                offset: Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Column(
-            children: [
-              SizedBox(
-                height: 150,
-                child: CustomPaint(
-                  painter: ProgressChartPainter(
-                    streak: _currentStreak.toDouble(),
-                    hours: _studyHours.toDouble(),
-                    efficiency: _efficiency,
-                  ),
-                ),
-              ),
-              SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _buildStatItem('$_currentStreak', 'Day Streak', Colors.orange[100]),
-                  _buildStatItem('${_studyHours}h', 'This Week', Colors.green[100]),
-                  _buildStatItem('${(_efficiency * 100).toStringAsFixed(0)}%', 'Efficiency', Colors.blue[100]),
-                ],
-              ),
-            ],
-          ),
+        SizedBox(height: 16),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _buildStatItem(
+              icon: Icons.local_fire_department,
+              value: _currentStreak.toString(),
+              label: 'Day Streak',
+              color: Colors.orange,
+            ),
+            _buildStatItem(
+              icon: Icons.access_time,
+              value: _studyHours.toString(),
+              label: 'Study Hours',
+              color: Colors.blue,
+            ),
+            _buildStatItem(
+              icon: Icons.trending_up,
+              value: '${(_efficiency * 100).round()}%',
+              label: 'Efficiency',
+              color: Colors.green,
+            ),
+          ],
         ),
       ],
     );
   }
 
-  Widget _buildStatItem(String value, String label, Color? color) {
-    return Column(
-      children: [
-        Container(
-          padding: EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
-          child: Text(
+  Widget _buildStatItem({
+    required IconData icon,
+    required String value,
+    required String label,
+    required Color color,
+  }) {
+    return Container(
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 24),
+          SizedBox(height: 8),
+          Text(
             value,
             style: TextStyle(
-              fontWeight: FontWeight.w700,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
               color: Colors.grey[800],
             ),
           ),
-        ),
-        SizedBox(height: 4),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[600],
+          SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[600],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -457,269 +432,152 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'UPCOMING EXAMS',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey[500],
-                letterSpacing: 1,
-              ),
-            ),
-            TextButton(
-              onPressed: () {},
-              child: Text(
-                'View All',
-                style: TextStyle(
-                  color: Colors.blue[400],
-                  fontSize: 12,
-                ),
-              ),
-            ),
-          ],
+        Text(
+          'Upcoming Deadlines',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.grey[800],
+          ),
         ),
-        SizedBox(height: 12),
-        ..._reminders.map((reminder) {
-          return Container(
-            margin: EdgeInsets.only(bottom: 12),
-            padding: EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: Offset(0, 4),
+        SizedBox(height: 16),
+        ListView.builder(
+          shrinkWrap: true,
+          physics: NeverScrollableScrollPhysics(),
+          itemCount: _reminders.length,
+          itemBuilder: (context, index) {
+            final reminder = _reminders[index];
+            return Container(
+              margin: EdgeInsets.only(bottom: 8),
+              padding: EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.grey[200]!,
+                  width: 1,
                 ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 4,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.blue[400],
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                SizedBox(width: 16),
-                Expanded(
-                  child: Column(
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        reminder['course'] as String,
+                        reminder['course'],
                         style: TextStyle(
-                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
                           color: Colors.grey[800],
                         ),
                       ),
                       SizedBox(height: 4),
                       Text(
-                        reminder['date'] as String,
+                        reminder['date'],
                         style: TextStyle(
-                          color: Colors.grey[500],
-                          fontSize: 12,
+                          fontSize: 14,
+                          color: Colors.grey[600],
                         ),
                       ),
                     ],
                   ),
-                ),
-                Text(
-                  reminder['daysLeft'] as String,
-                  style: TextStyle(
-                    color: Colors.orange[400],
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                  Text(
+                    reminder['daysLeft'],
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.red[400],
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
-                ),
-              ],
-            ),
-          );
-        }).toList(),
+                ],
+              ),
+            );
+          },
+        ),
       ],
     );
   }
 
   Widget _buildMotivationSection(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'DAILY MOTIVATION',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey[500],
-                letterSpacing: 1,
-              ),
+    return Container(
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.blue[50],
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          Text(
+            _motivationalQuote,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 16,
+              fontStyle: FontStyle.italic,
+              color: Colors.grey[800],
             ),
-            IconButton(
-              icon: _isRefreshingQuote
-                  ? SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Icon(Icons.refresh, size: 18, color: Colors.grey[500]),
-              onPressed: () {
-                if (_isRefreshingQuote) return;
-                
-                setState(() => _isRefreshingQuote = true);
-                Feedback.forTap(context);
-                
-                Future.delayed(Duration(seconds: 1), () {
-                  final randomQuote = _quotes..shuffle();
-                  final quoteString = randomQuote.first;
-                  final quoteParts = quoteString.split(' - ');
-                  setState(() {
-                    _motivationalQuote = quoteParts[0];
-                    _quoteAuthor = quoteParts.length > 1 ? '- ${quoteParts[1]}' : '';
-                    _isRefreshingQuote = false;
-                  });
-                });
-              },
+          ),
+          SizedBox(height: 8),
+          Text(
+            _quoteAuthor,
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey[600],
             ),
-          ],
-        ),
-        SizedBox(height: 12),
-        Container(
-          padding: EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 10,
-                offset: Offset(0, 4),
-              ),
-            ],
           ),
-          child: Column(
-            children: [
-              Text(
-                _motivationalQuote,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontStyle: FontStyle.italic,
-                  color: Colors.grey[800],
-                  height: 1.4,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              SizedBox(height: 8),
-              Text(
-                _quoteAuthor,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                ),
-              ),
-            ],
+          SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: _isRefreshingQuote
+                ? null
+                : () {
+                    setState(() {
+                      _isRefreshingQuote = true;
+                      final random = Random();
+                      final newQuote = _quotes[random.nextInt(_quotes.length)];
+                      final parts = newQuote.split(' - ');
+                      _motivationalQuote = parts[0];
+                      _quoteAuthor = '- ${parts[1]}';
+                      Future.delayed(Duration(seconds: 1), () {
+                        setState(() {
+                          _isRefreshingQuote = false;
+                        });
+                      });
+                    });
+                  },
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.refresh),
+                SizedBox(width: 8),
+                Text('New Quote'),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
 class ProgressChartPainter extends CustomPainter {
-  final double streak;
-  final double hours;
-  final double efficiency;
-
-  ProgressChartPainter({
-    required this.streak,
-    required this.hours,
-    required this.efficiency,
-  });
-
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 3;
-    
-    final bgPaint = Paint()
-      ..color = Colors.grey[200]!
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 10;
-    
-    canvas.drawCircle(center, radius, bgPaint);
-    
-    final streakPaint = Paint()
-      ..color = Colors.orange[300]!
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 10
-      ..strokeCap = StrokeCap.round;
-    
-    final streakSweep = 2 * pi * (streak / 30).clamp(0.0, 1.0);
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      -pi / 2,
-      streakSweep,
-      false,
-      streakPaint,
-    );
-    
-    final hoursPaint = Paint()
-      ..color = Colors.green[300]!
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 10
-      ..strokeCap = StrokeCap.round;
-    
-    final hoursSweep = 2 * pi * (hours / 40).clamp(0.0, 1.0);
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      -pi / 2 + streakSweep + 0.1,
-      hoursSweep,
-      false,
-      hoursPaint,
-    );
-    
-    final efficiencyPaint = Paint()
-      ..color = Colors.blue[300]!
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 10
-      ..strokeCap = StrokeCap.round;
-    
-    final efficiencySweep = 2 * pi * efficiency.clamp(0.0, 1.0);
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      -pi / 2 + streakSweep + hoursSweep + 0.2,
-      efficiencySweep,
-      false,
-      efficiencyPaint,
-    );
-    
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: 'Progress',
-        style: TextStyle(
-          color: Colors.grey[600],
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-      textAlign: TextAlign.center,
-      textDirection: TextDirection.ltr,
-    );
-    
-    textPainter.layout();
-    textPainter.paint(
-      canvas,
-      center - Offset(textPainter.width / 2, textPainter.height / 2),
-    );
+    final paint = Paint()
+      ..color = Colors.blue
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+
+    final path = Path();
+    path.moveTo(0, size.height);
+    path.lineTo(size.width * 0.2, size.height * 0.7);
+    path.lineTo(size.width * 0.4, size.height * 0.8);
+    path.lineTo(size.width * 0.6, size.height * 0.3);
+    path.lineTo(size.width * 0.8, size.height * 0.5);
+    path.lineTo(size.width, size.height * 0.2);
+
+    canvas.drawPath(path, paint);
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

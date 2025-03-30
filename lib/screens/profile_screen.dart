@@ -1,6 +1,15 @@
 import 'package:flutter/material.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
+  @override
+  _ProfileScreenState createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  TextEditingController _nameController = TextEditingController();
+  TextEditingController _emailController = TextEditingController();
+  String _profilePicture = ''; // Profile picture selection logic can be added here
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -52,7 +61,7 @@ class ProfileScreen extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         Text(
-          'John Doe',
+          'John Doe', // Static user name, replace with dynamic data later
           style: TextStyle(
             color: textColor,
             fontSize: 24,
@@ -61,7 +70,7 @@ class ProfileScreen extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          'Computer Science Student',
+          'Computer Science Student', // Static text, replace with dynamic role
           style: TextStyle(
             color: secondaryTextColor,
             fontSize: 16,
@@ -69,7 +78,9 @@ class ProfileScreen extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         FilledButton.tonal(
-          onPressed: () {},
+          onPressed: () {
+            // Handle edit profile functionality here
+          },
           style: FilledButton.styleFrom(
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
@@ -275,7 +286,9 @@ class ProfileScreen extends StatelessWidget {
             subtitle: '',
             textColor: Colors.red,
             secondaryTextColor: secondaryTextColor,
-            onTap: () {},
+            onTap: () {
+              // Handle log out functionality
+            },
           ),
         ],
       ),
