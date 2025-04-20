@@ -15,7 +15,7 @@ class _MainWrapperState extends State<MainWrapper> {
   // List of all screens
   final List<Widget> _screens = [
     HomeScreen(),
-    RoomsScreen(),
+    StudyRoomScreen(),
     ResourcesScreen(),
     CareerScreen(),
   ];
