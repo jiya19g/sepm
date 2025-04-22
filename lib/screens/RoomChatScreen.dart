@@ -55,12 +55,6 @@ class _RoomChatScreenState extends State<RoomChatScreen> {
             text: data['text'] as String,
           );
         }).toList();
-
-        if (mounted) {
-          // Reverse the list to show newest at bottom
-          setState(() => _messages = messages.toList());
-
-        }
       });
   }
 
