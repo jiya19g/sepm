@@ -5,8 +5,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
-import 'package:studybuddy_app/service/study_session_service.dart';
-
 class HomeScreen extends StatefulWidget {
   @override
   _HomeScreenState createState() => _HomeScreenState();
@@ -15,7 +13,6 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final StudySessionService _studySession = StudySessionService();
   String _userName = 'User';
   
   // Study metrics
@@ -57,6 +54,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _studyTimer?.cancel();
     super.dispose();
   }
 
@@ -178,28 +176,20 @@ class _HomeScreenState extends State<HomeScreen> {
       margin: EdgeInsets.symmetric(vertical: 16),
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(
-          backgroundColor: _studySession.isStudying ? Colors.red : Colors.green,
+          backgroundColor: _isStudying ? Colors.red : Colors.green,
           padding: EdgeInsets.symmetric(vertical: 16, horizontal: 24),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
         ),
-        onPressed: () async {
-          if (_studySession.isStudying) {
-            await _studySession.endStudySession();
-            _showSessionSummary(_studySession.sessionMinutes);
-          } else {
-            _studySession.startStudySession();
-          }
-          setState(() {}); // Refresh UI
-        },
+        onPressed: _isStudying ? _endStudySession : _startStudySession,
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(_studySession.isStudying ? Icons.stop : Icons.play_arrow),
+            Icon(_isStudying ? Icons.stop : Icons.play_arrow),
             SizedBox(width: 8),
             Text(
-              _studySession.isStudying ? 'END STUDY SESSION' : 'START STUDY SESSION',
+              _isStudying ? 'END STUDY SESSION' : 'START STUDY SESSION',
               style: TextStyle(fontSize: 16),
             ),
           ],
