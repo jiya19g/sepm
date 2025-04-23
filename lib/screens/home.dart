@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:studybuddy_app/screens/profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   @override
@@ -897,7 +898,10 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             icon: Icon(Icons.person, color: Colors.grey[800]),
             onPressed: () {
-              // Profile navigation
+              Navigator.push(
+    context,
+    MaterialPageRoute(builder: (context) => ProfileScreen()),
+  );
             },
           ),
         ],
