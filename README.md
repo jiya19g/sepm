@@ -63,11 +63,6 @@ A Flutter-based study collaboration application that helps students connect, lea
 ## Platform Support 📱
 
 - ✅ Android
-- ✅ iOS
-- ✅ Windows
-- ✅ macOS
-- ✅ Linux
-- ✅ Web
 
 ## Dependencies 📦
 
