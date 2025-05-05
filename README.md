@@ -46,7 +46,7 @@ A Flutter-based study collaboration application that helps students connect, lea
 2. **Installation**
    ```bash
    # Clone the repository
-   git clone [repository-url]
+   git clone https://github.com/jiya19g/sepm.git
 
    # Install dependencies
    flutter pub get
