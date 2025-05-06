@@ -143,7 +143,7 @@ class WelcomeScreen extends StatelessWidget {
                     ),
                     SizedBox(height: 40),
                     Text(
-                      'Jiya and Tanya Reserved @2025',
+                      'Rights Reserved @2025',
                       style: GoogleFonts.poppins(
                         color: Colors.grey,
                         fontSize: 12,
