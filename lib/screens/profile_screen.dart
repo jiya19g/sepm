@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ProfileScreen extends StatefulWidget {
   @override
@@ -6,17 +9,371 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  TextEditingController _nameController = TextEditingController();
-  TextEditingController _emailController = TextEditingController();
-  String _profilePicture = ''; // Profile picture selection logic can be added here
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  late User _currentUser;
+  Map<String, dynamic>? _userData;
+  bool _isLoading = true;
+  bool _isEditing = false;
+  int _rating = 0;
+  final TextEditingController _feedbackController = TextEditingController();
+
+  // Controllers
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _courseController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    try {
+      _currentUser = _auth.currentUser!;
+      final doc = await _firestore.collection('users').doc(_currentUser.uid).get();
+      
+      if (doc.exists) {
+        setState(() {
+          _userData = doc.data()!;
+          _nameController.text = _userData?['name'] ?? '';
+          _emailController.text = _userData?['email'] ?? _currentUser.email ?? '';
+          _phoneController.text = _userData?['phone'] ?? '';
+          _courseController.text = _userData?['course'] ?? '';
+          _isLoading = false;
+        });
+      } else {
+        await _firestore.collection('users').doc(_currentUser.uid).set({
+          'email': _currentUser.email,
+          'name': '',
+          'phone': '',
+          'course': '',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        _loadUserData();
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading user data: ${e.toString()}')),
+      );
+    }
+  }
+
+  Future<void> _updateProfile() async {
+    if (!_isEditing) {
+      setState(() => _isEditing = true);
+      return;
+    }
+
+    try {
+      setState(() => _isLoading = true);
+      await _firestore.collection('users').doc(_currentUser.uid).update({
+        'name': _nameController.text.trim(),
+        'phone': _phoneController.text.trim(),
+        'course': _courseController.text.trim(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      
+      if (_emailController.text.trim() != _currentUser.email) {
+        await _currentUser.updateEmail(_emailController.text.trim());
+      }
+
+      await _loadUserData();
+      setState(() => _isEditing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Profile updated successfully')),
+      );
+    } catch (e) {
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error updating profile: ${e.toString()}')),
+      );
+    }
+  }
+
+  Future<void> _logout() async {
+    try {
+      await _auth.signOut();
+      Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error signing out: ${e.toString()}')),
+      );
+    }
+  }
+
+  void _showHelpDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Help & Support'),
+        content: const Text(
+          'For any assistance or questions, please contact us at:\n\n'
+          'support@studysync.com\n\n'
+          'We typically respond within 24 hours.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showFeedbackDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Give Feedback'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('How would you rate our app?'),
+                    const SizedBox(height: 10),
+                    _buildStarRating(setState),
+                    const SizedBox(height: 20),
+                    TextField(
+                      controller: _feedbackController,
+                      decoration: const InputDecoration(
+                        labelText: 'Your feedback (optional)',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 4,
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    _submitFeedback();
+                    Navigator.pop(context);
+                  },
+                  child: const Text('Submit'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildStarRating(StateSetter setState) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(5, (index) {
+        return IconButton(
+          icon: Icon(
+            index < _rating ? Icons.star : Icons.star_border,
+            color: Colors.amber,
+            size: 40,
+          ),
+          onPressed: () {
+            setState(() {
+              _rating = index + 1;
+            });
+          },
+        );
+      }),
+    );
+  }
+
+  Future<void> _submitFeedback() async {
+    if (_rating == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please provide a rating')),
+      );
+      return;
+    }
+
+    try {
+      await _firestore.collection('feedback').add({
+        'userId': _currentUser.uid,
+        'userEmail': _currentUser.email,
+        'rating': _rating,
+        'feedback': _feedbackController.text.trim(),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Thank you for your feedback!')),
+      );
+      
+      // Reset feedback form
+      _rating = 0;
+      _feedbackController.clear();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error submitting feedback: ${e.toString()}')),
+      );
+    }
+  }
+
+  Widget _buildProfileHeader() {
+    return Column(
+      children: [
+        CircleAvatar(
+          radius: 50,
+          backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+          child: Icon(
+            Icons.person,
+            size: 50,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          _userData?['name'] ?? 'No name provided',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: Theme.of(context).textTheme.titleLarge?.color,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          _userData?['course'] ?? 'No course specified',
+          style: TextStyle(
+            fontSize: 16,
+            color: Theme.of(context).textTheme.titleMedium?.color,
+          ),
+        ),
+        const SizedBox(height: 16),
+        FilledButton.tonal(
+          onPressed: _updateProfile,
+          style: FilledButton.styleFrom(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          ),
+          child: Text(_isEditing ? 'Save Changes' : 'Edit Profile'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEditableField({
+    required String label,
+    required TextEditingController controller,
+    required IconData icon,
+    bool isEmail = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: Theme.of(context).textTheme.titleMedium?.color,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 4),
+          TextField(
+            controller: controller,
+            enabled: _isEditing,
+            keyboardType: isEmail ? TextInputType.emailAddress : TextInputType.text,
+            decoration: InputDecoration(
+              prefixIcon: Icon(icon),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              filled: !_isEditing,
+              fillColor: Theme.of(context).cardColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoCard() {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: Colors.grey.withOpacity(0.2),
+          width: 1,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            _buildEditableField(
+              label: 'Full Name',
+              controller: _nameController,
+              icon: Icons.person_outline,
+            ),
+            const SizedBox(height: 12),
+            _buildEditableField(
+              label: 'Email',
+              controller: _emailController,
+              icon: Icons.email_outlined,
+              isEmail: true,
+            ),
+            const SizedBox(height: 12),
+            _buildEditableField(
+              label: 'Phone Number',
+              controller: _phoneController,
+              icon: Icons.phone_outlined,
+            ),
+            const SizedBox(height: 12),
+            _buildEditableField(
+              label: 'Course/Program',
+              controller: _courseController,
+              icon: Icons.school_outlined,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required String text,
+    required VoidCallback onPressed,
+    Color? color,
+  }) {
+    return ListTile(
+      leading: Icon(icon, color: color),
+      title: Text(
+        text,
+        style: TextStyle(color: color),
+      ),
+      onTap: onPressed,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDarkMode = theme.brightness == Brightness.dark;
-    final cardColor = isDarkMode ? Colors.grey[900]! : Colors.white;
-    final textColor = isDarkMode ? Colors.white : Colors.black87;
-    final secondaryTextColor = isDarkMode ? Colors.grey[400]! : Colors.grey[600]!;
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -28,211 +385,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            _buildProfileHeader(context, theme, textColor, secondaryTextColor),
-            const SizedBox(height: 32),
-            
-            _buildSectionTitle('Account Settings', textColor),
-            _buildSettingsCard(context, cardColor, textColor, secondaryTextColor),
+            _buildProfileHeader(),
             const SizedBox(height: 24),
-            
-            _buildSectionTitle('Study Statistics', textColor),
-            _buildStatsGrid(context, cardColor, textColor, secondaryTextColor),
+            _buildInfoCard(),
             const SizedBox(height: 24),
-            
-            _buildSectionTitle('App Settings', textColor),
-            _buildSettingsList(context, cardColor, textColor, secondaryTextColor),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildProfileHeader(BuildContext context, ThemeData theme, Color textColor, Color secondaryTextColor) {
-    return Column(
-      children: [
-        CircleAvatar(
-          radius: 50,
-          backgroundColor: theme.colorScheme.primary.withOpacity(0.2),
-          child: Icon(
-            Icons.person,
-            size: 50,
-            color: theme.colorScheme.primary,
-          ),
-        ),
-        const SizedBox(height: 16),
-        Text(
-          'John Doe', // Static user name, replace with dynamic data later
-          style: TextStyle(
-            color: textColor,
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Computer Science Student', // Static text, replace with dynamic role
-          style: TextStyle(
-            color: secondaryTextColor,
-            fontSize: 16,
-          ),
-        ),
-        const SizedBox(height: 16),
-        FilledButton.tonal(
-          onPressed: () {
-            // Handle edit profile functionality here
-          },
-          style: FilledButton.styleFrom(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-          ),
-          child: const Text('Edit Profile'),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSectionTitle(String title, Color textColor) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Text(
-          title,
-          style: TextStyle(
-            color: textColor,
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSettingsCard(BuildContext context, Color cardColor, Color textColor, Color secondaryTextColor) {
-    return Card(
-      color: cardColor,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: Colors.grey.withOpacity(0.2),
-          width: 1,
-        ),
-      ),
-      child: Column(
-        children: [
-          _buildListTile(
-            icon: Icons.email_outlined,
-            title: 'Email',
-            subtitle: 'john.doe@example.com',
-            textColor: textColor,
-            secondaryTextColor: secondaryTextColor,
-            onTap: () {},
-          ),
-          const Divider(height: 0, indent: 16, endIndent: 16),
-          _buildListTile(
-            icon: Icons.lock_outlined,
-            title: 'Password',
-            subtitle: '••••••••',
-            textColor: textColor,
-            secondaryTextColor: secondaryTextColor,
-            onTap: () {},
-          ),
-          const Divider(height: 0, indent: 16, endIndent: 16),
-          _buildListTile(
-            icon: Icons.phone_outlined,
-            title: 'Phone Number',
-            subtitle: '+1 (555) 123-4567',
-            textColor: textColor,
-            secondaryTextColor: secondaryTextColor,
-            onTap: () {},
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildListTile({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required Color textColor,
-    required Color secondaryTextColor,
-    required VoidCallback onTap,
-  }) {
-    return ListTile(
-      leading: Icon(icon, color: secondaryTextColor),
-      title: Text(
-        title,
-        style: TextStyle(color: textColor),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(color: secondaryTextColor),
-      ),
-      trailing: Icon(Icons.chevron_right, color: secondaryTextColor),
-      onTap: onTap,
-      minVerticalPadding: 16,
-    );
-  }
-
-  Widget _buildStatsGrid(BuildContext context, Color cardColor, Color textColor, Color secondaryTextColor) {
-    return SizedBox(
-      height: MediaQuery.of(context).size.width * 0.9, // Fixed height based on screen width
-      child: GridView.count(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        crossAxisCount: 2,
-        childAspectRatio: 1.2, // Adjusted ratio
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-        children: [
-          _buildStatCard('5', 'Current Streak', cardColor, textColor, secondaryTextColor),
-          _buildStatCard('27', 'Total Hours', cardColor, textColor, secondaryTextColor),
-          _buildStatCard('15', 'Sessions', cardColor, textColor, secondaryTextColor),
-          _buildStatCard('A', 'Avg. Grade', cardColor, textColor, secondaryTextColor),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatCard(String value, String label, Color cardColor, Color textColor, Color secondaryTextColor) {
-    return Card(
-      color: cardColor,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: Colors.grey.withOpacity(0.2),
-          width: 1,
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                value,
-                style: TextStyle(
-                  color: textColor,
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
+            Card(
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                  color: Colors.grey.withOpacity(0.2),
+                  width: 1,
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              style: TextStyle(
-                color: secondaryTextColor,
-                fontSize: 14,
+              child: Column(
+                children: [
+                  _buildActionButton(
+                    icon: Icons.help_outline,
+                    text: 'Help & Support',
+                    onPressed: _showHelpDialog,
+                  ),
+                  const Divider(height: 0, indent: 16, endIndent: 16),
+                  _buildActionButton(
+                    icon: Icons.feedback,
+                    text: 'Give Feedback',
+                    onPressed: _showFeedbackDialog,
+                  ),
+                  const Divider(height: 0, indent: 16, endIndent: 16),
+                  _buildActionButton(
+                    icon: Icons.logout,
+                    text: 'Log Out',
+                    onPressed: _logout,
+                    color: Colors.red,
+                  ),
+                ],
               ),
-              textAlign: TextAlign.center,
             ),
           ],
         ),
@@ -240,58 +427,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildSettingsList(BuildContext context, Color cardColor, Color textColor, Color secondaryTextColor) {
-    return Card(
-      color: cardColor,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: Colors.grey.withOpacity(0.2),
-          width: 1,
-        ),
-      ),
-      child: Column(
-        children: [
-          _buildListTile(
-            icon: Icons.notifications_outlined,
-            title: 'Notifications',
-            subtitle: 'Enabled',
-            textColor: textColor,
-            secondaryTextColor: secondaryTextColor,
-            onTap: () {},
-          ),
-          const Divider(height: 0, indent: 16, endIndent: 16),
-          _buildListTile(
-            icon: Icons.dark_mode_outlined,
-            title: 'Dark Mode',
-            subtitle: 'System Default',
-            textColor: textColor,
-            secondaryTextColor: secondaryTextColor,
-            onTap: () {},
-          ),
-          const Divider(height: 0, indent: 16, endIndent: 16),
-          _buildListTile(
-            icon: Icons.help_outline,
-            title: 'Help & Support',
-            subtitle: 'Contact us',
-            textColor: textColor,
-            secondaryTextColor: secondaryTextColor,
-            onTap: () {},
-          ),
-          const Divider(height: 0, indent: 16, endIndent: 16),
-          _buildListTile(
-            icon: Icons.logout,
-            title: 'Log Out',
-            subtitle: '',
-            textColor: Colors.red,
-            secondaryTextColor: secondaryTextColor,
-            onTap: () {
-              // Handle log out functionality
-            },
-          ),
-        ],
-      ),
-    );
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
+    _courseController.dispose();
+    _feedbackController.dispose();
+    super.dispose();
   }
 }

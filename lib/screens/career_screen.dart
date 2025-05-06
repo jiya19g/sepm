@@ -14,7 +14,7 @@ class _CareerScreenState extends State<CareerScreen> {
   bool _isLoading = true;
   String? _errorMessage;
   final TextEditingController _searchController = TextEditingController();
-  String _locationFilter = 'United States';
+  String _locationFilter = 'India';
   String _jobTypeFilter = 'fulltime,parttime,intern,contractor';
 
   @override
@@ -43,7 +43,7 @@ class _CareerScreenState extends State<CareerScreen> {
     );
 
     final headers = {
-      'X-RapidAPI-Key': '4524d4676amsh1bcc7219828c4ccp135e30jsn8ba3d1a462cf',
+      'X-RapidAPI-Key': '68c38f446emshe123d5f890926adp191018jsndf152c62a366',
       'X-RapidAPI-Host': 'jobs-api14.p.rapidapi.com',
     };
 
