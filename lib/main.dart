@@ -4,9 +4,6 @@ import 'package:studybuddy_app/main_wrapper.dart';
 import 'package:studybuddy_app/screens/WelcomeScreen.dart';
 import 'package:studybuddy_app/screens/loginscree.dart';
 import 'package:studybuddy_app/screens/register_screen.dart';
-import 'package:studybuddy_app/screens/chatbot_screen.dart';
-import 'package:studybuddy_app/screens/lectures_screen.dart';
-import 'package:studybuddy_app/screens/quizzes_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,9 +29,6 @@ class MyApp extends StatelessWidget {
         '/login': (context) => LoginScreen(),
         '/main': (context) => MainWrapper(),
         '/register': (context) => RegisterScreen(),
-        '/chatbot': (context) => ChatbotScreen(),
-        '/lectures': (context) => LecturesScreen(),
-        '/quizzes': (context) => QuizzesScreen(),
       },
     );
   }

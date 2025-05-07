@@ -2,7 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:open_filex/open_filex.dart';
+import 'package:open_file/open_file.dart';
 import 'package:path/path.dart' as path;
 import 'dart:io';
 import 'database_helper.dart';
@@ -151,7 +151,7 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
     if (resource['filePath'] != null) {
       final file = File(resource['filePath']);
       if (await file.exists()) {
-        await OpenFilex.open(file.path);
+        await OpenFile.open(file.path);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('File not found')),
@@ -161,35 +161,35 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
   }
 
   void _showUploadDialog(BuildContext context) {
-    final TextEditingController _titleController = TextEditingController();
-    String _selectedType = 'PDF';
-    PlatformFile? _pickedFile;
+  final TextEditingController _titleController = TextEditingController();
+  String _selectedType = 'PDF';
+  PlatformFile? _pickedFile;
 
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) {
-          return Dialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16)),
-            child: Padding(
-              padding: EdgeInsets.all(20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Upload Resource',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600),
-                  ),
-                  SizedBox(height: 20),
-                  TextField(
-                    controller: _titleController,
-                    decoration: InputDecoration(
-                      labelText: 'Resource Title',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+  showDialog(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setState) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16)),
+          child: Padding(
+            padding: EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Upload Resource',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600),
+                ),
+                SizedBox(height: 20),
+                TextField(
+                  controller: _titleController,
+                  decoration: InputDecoration(
+                    labelText: 'Resource Title',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
                 ),
