@@ -7,8 +7,14 @@ import 'package:flutter_chat_ui/flutter_chat_ui.dart';
 class RoomChatScreen extends StatefulWidget {
   final String roomId;
   final String roomTitle;
+  final bool isAdmin;
 
-  const RoomChatScreen({required this.roomId, required this.roomTitle});
+  const RoomChatScreen({
+    required this.roomId,
+    required this.roomTitle,
+    required this.isAdmin,
+    Key? key,
+  }) : super(key: key);
 
   @override
   _RoomChatScreenState createState() => _RoomChatScreenState();
@@ -17,69 +23,101 @@ class RoomChatScreen extends StatefulWidget {
 class _RoomChatScreenState extends State<RoomChatScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  List<types.Message> _messages = [];
-  late String _currentUserId;
-  late CollectionReference _messagesRef;
+  final TextEditingController _messageController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+
+  List<Map<String, dynamic>> _messages = [];
 
   @override
   void initState() {
     super.initState();
-    _currentUserId = _auth.currentUser?.uid ?? '';
-    _messagesRef = _firestore.collection('room_messages')
-        .doc(widget.roomId)
-        .collection('messages');
-    _setupMessagesListener();
+    _loadMessages();
+    _setupMessageListener();
   }
 
-  void _setupMessagesListener() {
-    _messagesRef
-      .orderBy('timestamp', descending: true) // Get newest messages first
-      .snapshots()
-      .listen((snapshot) {
-        final messages = snapshot.docs.map((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          final timestamp = data['timestamp'] as Timestamp?;
-          
-          if (data['isSystemMessage'] == true) {
-            return types.SystemMessage(
-              author: types.User(id: data['senderId'] as String),
-              createdAt: timestamp?.millisecondsSinceEpoch ?? DateTime.now().millisecondsSinceEpoch,
-              id: doc.id,
-              text: data['text'] as String,
-            );
-          }
-          return types.TextMessage(
-            author: types.User(id: data['senderId'] as String),
-            createdAt: timestamp?.millisecondsSinceEpoch ?? DateTime.now().millisecondsSinceEpoch,
-            id: doc.id,
-            text: data['text'] as String,
-          );
+  void _loadMessages() async {
+    try {
+      final messagesSnapshot = await _firestore
+          .collection('rooms')
+          .doc(widget.roomId)
+          .collection('messages')
+          .orderBy('timestamp', descending: false) // Ascending order (oldest first)
+          .get();
+
+      setState(() {
+        _messages = messagesSnapshot.docs.map((doc) {
+          return {
+            'id': doc.id,
+            ...doc.data(),
+          };
         }).toList();
       });
+
+      // Scroll to bottom after loading
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scrollController.hasClients) {
+          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+        }
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load messages: $e')),
+      );
+    }
   }
 
-  void _handleSendPressed(types.PartialText message) async {
-    final user = _auth.currentUser;
-    if (user == null) return;
+  void _setupMessageListener() {
+    _firestore
+        .collection('rooms')
+        .doc(widget.roomId)
+        .collection('messages')
+        .orderBy('timestamp', descending: false) // Consistent ordering
+        .snapshots()
+        .listen((snapshot) {
+      setState(() {
+        _messages = snapshot.docs.map((doc) {
+          return {
+            'id': doc.id,
+            ...doc.data(),
+          };
+        }).toList();
+      });
 
-    // Optimistic update - add message immediately to local state
-    final tempMessage = types.TextMessage(
-      author: types.User(id: user.uid),
-      createdAt: DateTime.now().millisecondsSinceEpoch,
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      text: message.text,
-    );
-
-    setState(() => _messages = [..._messages, tempMessage]);
-
-    // Then send to Firestore
-    await _messagesRef.add({
-      'text': message.text,
-      'senderId': user.uid,
-      'senderName': user.displayName ?? 'Anonymous',
-      'timestamp': FieldValue.serverTimestamp(),
-      'isSystemMessage': false,
+      // Scroll to bottom when new message arrives
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
+      });
     });
+  }
+
+  Future<void> _sendMessage() async {
+    final user = _auth.currentUser;
+    if (user == null || _messageController.text.trim().isEmpty) return;
+
+    try {
+      await _firestore
+          .collection('rooms')
+          .doc(widget.roomId)
+          .collection('messages')
+          .add({
+        'text': _messageController.text.trim(),
+        'senderId': user.uid,
+        'senderName': user.displayName ?? 'Anonymous',
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      _messageController.clear();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to send message: $e')),
+      );
+    }
   }
 
   @override
@@ -88,28 +126,93 @@ class _RoomChatScreenState extends State<RoomChatScreen> {
       appBar: AppBar(
         title: Text(widget.roomTitle),
       ),
-      body: Chat(
-        messages: _messages,
-        onSendPressed: _handleSendPressed,
-        user: types.User(id: _currentUserId),
-        theme: DefaultChatTheme(
-          primaryColor: Colors.blue,
-          secondaryColor: Colors.blue[100]!,
-          inputBackgroundColor: Colors.white,
-          inputTextColor: Colors.black,
-          inputTextDecoration: InputDecoration(
-            hintText: 'Type your message...',
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(25),
-              borderSide: BorderSide.none,
+      body: Column(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              controller: _scrollController,
+              padding: EdgeInsets.all(8),
+              itemCount: _messages.length,
+              itemBuilder: (context, index) {
+                final message = _messages[index];
+                final isMe = message['senderId'] == _auth.currentUser?.uid;
+                
+                return Align(
+                  alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                  child: Container(
+                    margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                    padding: EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isMe ? Colors.blue[100] : Colors.grey[200],
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (!isMe)
+                          Text(
+                            message['senderName']?.toString() ?? 'Unknown',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        Text(message['text']?.toString() ?? ''),
+                        SizedBox(height: 4),
+                        Text(
+                          _formatTimestamp(message['timestamp']),
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
-            filled: true,
-            fillColor: Colors.grey[200],
-            contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           ),
-          sendButtonIcon: Icon(Icons.send, color: Colors.blue),
-        ),
+          Padding(
+            padding: EdgeInsets.all(8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _messageController,
+                    decoration: InputDecoration(
+                      hintText: 'Type your message...',
+                      border: OutlineInputBorder(),
+                    ),
+                    onSubmitted: (_) => _sendMessage(),
+                  ),
+                ),
+                SizedBox(width: 8),
+                IconButton(
+                  icon: Icon(Icons.send),
+                  onPressed: _sendMessage,
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  String _formatTimestamp(dynamic timestamp) {
+    if (timestamp == null) return 'Just now';
+    if (timestamp is Timestamp) {
+      final date = timestamp.toDate();
+      return '${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+    }
+    return 'Just now';
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    _scrollController.dispose();
+    super.dispose();
   }
 }
