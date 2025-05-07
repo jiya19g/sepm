@@ -29,17 +29,18 @@ class _HomeScreenState extends State<HomeScreen> {
   DateTime? _studySessionStart;
   Timer? _studyTimer;
   int _sessionMinutes = 0;
-  bool _streakUpdatedToday = false; 
+  bool _streakUpdatedToday = false;
+  StreamSubscription? _studySessionSubscription;
+  StreamSubscription? _metricsSubscription;
 
   // UI data
   bool _isRefreshingQuote = false;
   String _motivationalQuote = '"Success is the sum of small efforts, repeated day in and day out."';
   String _quoteAuthor = '- Robert Collier';
   final List<Map<String, dynamic>> _quickActions = [
-    {'icon': Icons.video_library, 'label': 'Lectures', 'color': Colors.blue[100]},
-    {'icon': Icons.article, 'label': 'Notes', 'color': Colors.green[100]},
-    {'icon': Icons.quiz, 'label': 'Quizzes', 'color': Colors.orange[100]},
-    {'icon': Icons.group, 'label': 'Groups', 'color': Colors.purple[100]},
+    {'icon': Icons.video_library, 'label': 'Lectures', 'color': Colors.blue[100], 'route': '/lectures'},
+    {'icon': Icons.quiz, 'label': 'Quizzes', 'color': Colors.orange[100], 'route': '/quizzes'},
+    {'icon': Icons.chat, 'label': 'Chatbot', 'color': Colors.purple[100], 'route': '/chatbot'},
   ];
   final List<String> _quotes = [
     '"The expert in anything was once a beginner." - Helen Hayes',
@@ -47,29 +48,85 @@ class _HomeScreenState extends State<HomeScreen> {
     '"Success is no accident. It is hard work, perseverance, learning, studying, sacrifice and most of all, love of what you are doing." - Pelé',
   ];
 
-@override
-void initState() {
-  super.initState();
-  _loadUserData();
-  _loadStudyMetrics();
-  
-  // Check streak daily at midnight
-  Timer.periodic(Duration(minutes: 5), (timer) { // Check every 5 minutes
-    final now = DateTime.now();
-    if (now.hour == 0 && now.minute >= 0 && now.minute < 5) {
-      // Reset streak update flag at midnight
-      setState(() {
-        _streakUpdatedToday = false;
-      });
-      _updateFirebaseMetrics();
-    }
-  });
-}
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+    _setupRealTimeListeners();
+    
+    // Check streak daily at midnight
+    Timer.periodic(Duration(minutes: 5), (timer) {
+      final now = DateTime.now();
+      if (now.hour == 0 && now.minute >= 0 && now.minute < 5) {
+        setState(() {
+          _streakUpdatedToday = false;
+        });
+        _updateFirebaseMetrics();
+      }
+    });
+  }
 
   @override
   void dispose() {
     _studyTimer?.cancel();
+    _studySessionSubscription?.cancel();
+    _metricsSubscription?.cancel();
     super.dispose();
+  }
+
+  void _setupRealTimeListeners() {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    // Listen to metrics changes
+    _metricsSubscription?.cancel();
+    _metricsSubscription = _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('metrics')
+        .doc('study')
+        .snapshots()
+        .listen((snapshot) {
+      if (snapshot.exists) {
+        final data = snapshot.data()!;
+        setState(() {
+          _currentStreak = data['currentStreak'] ?? 0;
+          _totalStudyMinutes = data['totalStudyMinutes'] ?? 0;
+          _lastStudyDate = data['lastStudyDate']?.toDate();
+          _completedTasksCount = data['completedTasksCount'] ?? 0;
+          _totalTasksCount = data['totalTasksCount'] ?? 0;
+          _streakUpdatedToday = data['streakUpdatedToday'] ?? false;
+          _efficiencyScore = _calculateEfficiency();
+        });
+      }
+    });
+
+    // Listen to active session changes
+    _studySessionSubscription?.cancel();
+    _studySessionSubscription = _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('activeSessions')
+        .doc('current')
+        .snapshots()
+        .listen((snapshot) {
+      if (snapshot.exists) {
+        final data = snapshot.data()!;
+        final startTime = (data['startTime'] as Timestamp).toDate();
+        final now = DateTime.now();
+        
+        if (!_isStudying) {
+          setState(() {
+            _isStudying = true;
+            _studySessionStart = startTime;
+            _sessionMinutes = now.difference(startTime).inMinutes;
+          });
+          _startTimer();
+        }
+      } else if (_isStudying) {
+        _endStudySession();
+      }
+    });
   }
 
   Future<void> _loadUserData() async {
@@ -90,225 +147,214 @@ void initState() {
     return efficiency.clamp(0.0, 100.0);
   }
 
-Future<void> _loadStudyMetrics() async {
-  final user = _auth.currentUser;
-  if (user == null) return;
+  void _showSessionSummary(int minutes) {
+    final hours = minutes ~/ 60;
+    final remainingMinutes = minutes % 60;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
 
-  try {
-    final metricsDoc = await _firestore
-        .collection('users')
-        .doc(user.uid)
-        .collection('metrics')
-        .doc('study')
-        .get();
-
-    if (metricsDoc.exists) {
-      final data = metricsDoc.data()!;
-      setState(() {
-        _currentStreak = data['currentStreak'] ?? 0;
-        _totalStudyMinutes = data['totalStudyMinutes'] ?? 0;
-        _lastStudyDate = data['lastStudyDate']?.toDate();
-        _completedTasksCount = data['completedTasksCount'] ?? 0;
-        _totalTasksCount = data['totalTasksCount'] ?? 0;
-        _streakUpdatedToday = data['streakUpdatedToday'] ?? false;
-        _efficiencyScore = _calculateEfficiency();
-      });
-    }
-  } catch (e) {
-    print('Error loading metrics: $e');
-  }
-}
-
-void _showSessionSummary(int minutes) {
-  final hours = minutes ~/ 60;
-  final remainingMinutes = minutes % 60;
-  final now = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
-
-  showDialog(
-    context: context,
-    barrierDismissible: false,
-    builder: (context) => AlertDialog(
-      title: Row(
-        children: [
-          Icon(Icons.check_circle, color: Colors.green, size: 28),
-          SizedBox(width: 10),
-          Text('Session Completed', style: TextStyle(fontWeight: FontWeight.bold)),
-        ],
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Great job studying today!', style: TextStyle(fontSize: 16)),
-          SizedBox(height: 16),
-          _buildSummaryRow(Icons.timer, 'Duration:', 
-              '$hours ${hours == 1 ? 'hour' : 'hours'} $remainingMinutes minutes'),
-          SizedBox(height: 8),
-          _buildSummaryRow(Icons.today, 'Date:', 
-              DateFormat('MMMM d, y').format(today)),
-          SizedBox(height: 8),
-          if (_currentStreak > 0)
-            _buildSummaryRow(Icons.local_fire_department, 'Current streak:', 
-                '$_currentStreak ${_currentStreak == 1 ? 'day' : 'days'}'),
-          SizedBox(height: 16),
-          Text('Keep up the good work!', 
-              style: TextStyle(fontStyle: FontStyle.italic)),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          style: TextButton.styleFrom(
-            foregroundColor: Theme.of(context).primaryColor,
-          ),
-          child: Text('DISMISS'),
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.green, size: 28),
+            SizedBox(width: 10),
+            Text('Session Completed', style: TextStyle(fontWeight: FontWeight.bold)),
+          ],
         ),
-      ],
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Great job studying today!', style: TextStyle(fontSize: 16)),
+            SizedBox(height: 16),
+            _buildSummaryRow(Icons.timer, 'Duration:', 
+                '$hours ${hours == 1 ? 'hour' : 'hours'} $remainingMinutes minutes'),
+            SizedBox(height: 8),
+            _buildSummaryRow(Icons.today, 'Date:', 
+                DateFormat('MMMM d, y').format(today)),
+            SizedBox(height: 8),
+            if (_currentStreak > 0)
+              _buildSummaryRow(Icons.local_fire_department, 'Current streak:', 
+                  '$_currentStreak ${_currentStreak == 1 ? 'day' : 'days'}'),
+            SizedBox(height: 16),
+            Text('Keep up the good work!', 
+                style: TextStyle(fontStyle: FontStyle.italic)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).primaryColor,
+            ),
+            child: Text('DISMISS'),
+          ),
+        ],
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 
-Widget _buildSummaryRow(IconData icon, String label, String value) {
-  return Row(
-    children: [
-      Icon(icon, size: 20, color: Colors.grey[600]),
-      SizedBox(width: 8),
-      Text(label, style: TextStyle(fontWeight: FontWeight.bold)),
-      SizedBox(width: 8),
-      Text(value),
-    ],
-  );
-}
+  Widget _buildSummaryRow(IconData icon, String label, String value) {
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: Colors.grey[600]),
+        SizedBox(width: 8),
+        Text(label, style: TextStyle(fontWeight: FontWeight.bold)),
+        SizedBox(width: 8),
+        Text(value),
+      ],
+    );
+  }
 
- void _startStudySession() {
-  final now = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
-
-  setState(() {
-    _isStudying = true;
-    _studySessionStart = now;
-    _sessionMinutes = 0;
-    
+  void _startTimer() {
+    _studyTimer?.cancel();
     _studyTimer = Timer.periodic(Duration(minutes: 1), (timer) {
-      setState(() {
-        _sessionMinutes++;
-        _totalStudyMinutes++;
-      });
+      if (_isStudying) {
+        setState(() {
+          _sessionMinutes++;
+          _totalStudyMinutes++;
+        });
+        _updateFirebaseMetrics();
+      } else {
+        timer.cancel();
+      }
     });
-  });
-}
+  }
+
+  Future<void> _startStudySession() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final now = DateTime.now();
+
+    try {
+      await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('activeSessions')
+          .doc('current')
+          .set({
+        'startTime': Timestamp.fromDate(now),
+        'lastUpdated': Timestamp.now(),
+      });
+
+      setState(() {
+        _isStudying = true;
+        _studySessionStart = now;
+        _sessionMinutes = 0;
+      });
+
+      _startTimer();
+    } catch (e) {
+      print('Error starting study session: $e');
+    }
+  }
 
   Future<void> _endStudySession() async {
-  final user = _auth.currentUser;
-  if (user == null || !_isStudying) return;
+    final user = _auth.currentUser;
+    if (user == null || !_isStudying) return;
 
-  _studyTimer?.cancel();
-  
-  final now = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
+    try {
+      _studyTimer?.cancel();
+      
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
 
-  // Always update study minutes
-  setState(() {
-    _totalStudyMinutes += _sessionMinutes;
-  });
+      // Delete active session
+      await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('activeSessions')
+          .doc('current')
+          .delete();
 
-  // Streak update logic - simplified and more reliable
-  if (_lastStudyDate == null) {
-    // First ever study session
-    setState(() {
-      _currentStreak = 1;
-      _streakUpdatedToday = true;
-      _lastStudyDate = now;
-    });
-  } else {
-    final lastStudyDay = DateTime(
-      _lastStudyDate!.year,
-      _lastStudyDate!.month,
-      _lastStudyDate!.day,
-    );
-    
-    if (lastStudyDay.isBefore(today)) {
-      // New day - check if consecutive
-      if (lastStudyDay.isAtSameMomentAs(today.subtract(Duration(days: 1)))) {
-        // Consecutive day
-        setState(() {
-          _currentStreak++;
-          _streakUpdatedToday = true;
-          _lastStudyDate = now;
+      // Save session to history
+      if (_studySessionStart != null) {
+        await _firestore
+            .collection('users')
+            .doc(user.uid)
+            .collection('studySessions')
+            .add({
+          'startTime': Timestamp.fromDate(_studySessionStart!),
+          'endTime': Timestamp.now(),
+          'durationMinutes': _sessionMinutes,
+          'date': Timestamp.fromDate(today),
         });
-      } else {
-        // Not consecutive - reset streak
+      }
+
+      // Update streak
+      if (_lastStudyDate == null) {
         setState(() {
           _currentStreak = 1;
           _streakUpdatedToday = true;
           _lastStudyDate = now;
         });
+      } else {
+        final lastStudyDay = DateTime(
+          _lastStudyDate!.year,
+          _lastStudyDate!.month,
+          _lastStudyDate!.day,
+        );
+        
+        if (lastStudyDay.isBefore(today)) {
+          if (lastStudyDay.isAtSameMomentAs(today.subtract(Duration(days: 1)))) {
+            setState(() {
+              _currentStreak++;
+              _streakUpdatedToday = true;
+              _lastStudyDate = now;
+            });
+          } else {
+            setState(() {
+              _currentStreak = 1;
+              _streakUpdatedToday = true;
+              _lastStudyDate = now;
+            });
+          }
+        }
       }
-    }
-    // If same day, don't update streak again
-  }
 
-  // Save to Firestore
-  await _updateFirebaseMetrics();
-  _showSessionSummary(_sessionMinutes);
-}
-Future<void> _updateStreakAndStudyTime() async {
-  final user = _auth.currentUser;
-  if (user == null) return;
+      setState(() {
+        _isStudying = false;
+        _totalStudyMinutes += _sessionMinutes;
+      });
 
-  final now = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
+      await _updateFirebaseMetrics();
+      _showSessionSummary(_sessionMinutes);
 
-  // Get all study sessions from Firestore
-  final sessionsSnapshot = await _firestore
-      .collection('users')
-      .doc(user.uid)
-      .collection('studySessions')
-      .orderBy('date', descending: true)
-      .get();
-
-  if (sessionsSnapshot.docs.isEmpty) return;
-
-  // Calculate total study time
-  int totalMinutes = sessionsSnapshot.docs.fold(0, (sum, doc) {
-    final data = doc.data();
-    return sum + (data['durationMinutes'] as int? ?? 0);
-  });
-
-  // Calculate streak
-  int streak = 0;
-  DateTime currentDate = today;
-  bool streakContinues = true;
-  
-  // Check consecutive days with study sessions
-  while (streakContinues) {
-    final hasSessionOnDate = sessionsSnapshot.docs.any((doc) {
-      final sessionDate = (doc.data()['date'] as Timestamp).toDate();
-      return sessionDate.year == currentDate.year &&
-             sessionDate.month == currentDate.month &&
-             sessionDate.day == currentDate.day;
-    });
-
-    if (hasSessionOnDate) {
-      streak++;
-      currentDate = currentDate.subtract(Duration(days: 1));
-    } else {
-      streakContinues = false;
+    } catch (e) {
+      print('Error ending study session: $e');
     }
   }
 
-  setState(() {
-    _currentStreak = streak;
-    _totalStudyMinutes = totalMinutes;
-    _lastStudyDate = sessionsSnapshot.docs.first.data()['date']?.toDate();
-  });
+  Future<void> _updateFirebaseMetrics() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
 
-  await _updateFirebaseMetrics();
-}
+    try {
+      await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('metrics')
+          .doc('study')
+          .set({
+        'currentStreak': _currentStreak,
+        'totalStudyMinutes': _totalStudyMinutes,
+        'lastStudyDate': _lastStudyDate != null ? Timestamp.fromDate(_lastStudyDate!) : null,
+        'completedTasksCount': _completedTasksCount,
+        'totalTasksCount': _totalTasksCount,
+        'streakUpdatedToday': _streakUpdatedToday,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      print('Error saving to Firestore: $e');
+    }
+  }
 
   Widget _buildStudySessionButton() {
     return Container(
@@ -317,9 +363,9 @@ Future<void> _updateStreakAndStudyTime() async {
         style: ElevatedButton.styleFrom(
           foregroundColor: Colors.white,
           backgroundColor: _isStudying ? Colors.red[400] : Theme.of(context).primaryColor,
-          padding: EdgeInsets.symmetric(vertical: 20, horizontal: 32),
+          padding: EdgeInsets.symmetric(vertical: 24, horizontal: 32),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(20),
           ),
           elevation: 4,
           shadowColor: _isStudying ? Colors.red[100] : Theme.of(context).primaryColor.withOpacity(0.3),
@@ -328,12 +374,12 @@ Future<void> _updateStreakAndStudyTime() async {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(_isStudying ? Icons.stop_circle_outlined : Icons.play_circle_fill_outlined, size: 28),
+            Icon(_isStudying ? Icons.stop_circle_outlined : Icons.play_circle_fill_outlined, size: 32),
             SizedBox(width: 12),
             Text(
               _isStudying ? 'STOP SESSION' : 'START STUDYING',
               style: TextStyle(
-                fontSize: 18,
+                fontSize: 20,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 0.5,
               ),
@@ -394,29 +440,37 @@ Future<void> _updateStreakAndStudyTime() async {
     return GestureDetector(
       onTap: () => _showMetricInfoDialog(label),
       child: Container(
-        padding: EdgeInsets.all(16),
+        padding: EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: color.withOpacity(0.1),
+              blurRadius: 10,
+              offset: Offset(0, 4),
+            ),
+          ],
         ),
         child: Column(
           children: [
-            Icon(icon, color: color, size: 24),
-            SizedBox(height: 8),
+            Icon(icon, color: color, size: 28),
+            SizedBox(height: 12),
             Text(
               value,
               style: TextStyle(
-                fontSize: 20,
+                fontSize: 22,
                 fontWeight: FontWeight.bold,
                 color: Colors.grey[800],
               ),
             ),
-            SizedBox(height: 4),
+            SizedBox(height: 6),
             Text(
               label,
               style: TextStyle(
-                fontSize: 12,
+                fontSize: 14,
                 color: Colors.grey[600],
+                fontWeight: FontWeight.w500,
               ),
             ),
           ],
@@ -512,45 +566,52 @@ Future<void> _updateStreakAndStudyTime() async {
         Text(
           'Quick Actions',
           style: TextStyle(
-            fontSize: 20,
+            fontSize: 24,
             fontWeight: FontWeight.bold,
             color: Colors.grey[800],
           ),
         ),
-        SizedBox(height: 16),
+        SizedBox(height: 20),
         GridView.builder(
           shrinkWrap: true,
           physics: NeverScrollableScrollPhysics(),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
+            crossAxisCount: 3,
             crossAxisSpacing: 16,
             mainAxisSpacing: 16,
-            childAspectRatio: 1.5,
+            childAspectRatio: 1.0,
           ),
           itemCount: _quickActions.length,
           itemBuilder: (context, index) {
             final action = _quickActions[index];
             return InkWell(
-              onTap: () => _showQuickActionDialog(context, action['label']),
+              onTap: () => Navigator.pushNamed(context, action['route']),
               child: Container(
                 decoration: BoxDecoration(
                   color: action['color'],
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 10,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
                       action['icon'],
-                      size: 32,
+                      size: 40,
                       color: Colors.grey[800],
                     ),
-                    SizedBox(height: 8),
+                    SizedBox(height: 12),
                     Text(
                       action['label'],
                       style: TextStyle(
                         fontSize: 16,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: FontWeight.w600,
                         color: Colors.grey[800],
                       ),
                     ),
@@ -561,22 +622,6 @@ Future<void> _updateStreakAndStudyTime() async {
           },
         ),
       ],
-    );
-  }
-
-  void _showQuickActionDialog(BuildContext context, String action) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Quick Action: $action'),
-        content: Text('This feature is coming soon!'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('OK'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -753,34 +798,6 @@ Future<void> _updateStreakAndStudyTime() async {
     await _updateFirebaseMetrics();
   }
 
-Future<void> _updateFirebaseMetrics() async {
-  final user = _auth.currentUser;
-  if (user == null) return;
-
-  try {
-    await _firestore.collection('users').doc(user.uid).collection('metrics').doc('study').set({
-      'currentStreak': _currentStreak,
-      'totalStudyMinutes': _totalStudyMinutes,
-      'lastStudyDate': _lastStudyDate != null ? Timestamp.fromDate(_lastStudyDate!) : null,
-      'completedTasksCount': _completedTasksCount,
-      'totalTasksCount': _totalTasksCount,
-      'streakUpdatedToday': _streakUpdatedToday,
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-    
-    // Also save the session details
-    if (_studySessionStart != null) {
-      await _firestore.collection('users').doc(user.uid).collection('studySessions').add({
-        'startTime': Timestamp.fromDate(_studySessionStart!),
-        'endTime': Timestamp.now(),
-        'durationMinutes': _sessionMinutes,
-        'date': Timestamp.fromDate(DateTime.now()),
-      });
-    }
-  } catch (e) {
-    print('Error saving to Firestore: $e');
-  }
-}
   Widget _buildReminderSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -985,10 +1002,17 @@ Future<void> _updateFirebaseMetrics() async {
 
   Widget _buildMotivationSection() {
     return Container(
-      padding: EdgeInsets.all(16),
+      padding: EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: Colors.blue[50],
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.blue.withOpacity(0.1),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         children: [
@@ -996,21 +1020,29 @@ Future<void> _updateFirebaseMetrics() async {
             _motivationalQuote,
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: 16,
+              fontSize: 18,
               fontStyle: FontStyle.italic,
               color: Colors.grey[800],
+              height: 1.5,
             ),
           ),
-          SizedBox(height: 8),
+          SizedBox(height: 12),
           Text(
             _quoteAuthor,
             style: TextStyle(
-              fontSize: 14,
+              fontSize: 16,
               color: Colors.grey[600],
+              fontWeight: FontWeight.w500,
             ),
           ),
-          SizedBox(height: 16),
+          SizedBox(height: 20),
           ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
             onPressed: _isRefreshingQuote
                 ? null
                 : () {
@@ -1041,30 +1073,6 @@ Future<void> _updateFirebaseMetrics() async {
       ),
     );
   }
-void _printCurrentState() {
-  print('''
-  Current State:
-  - Streak: $_currentStreak
-  - Study Minutes: $_totalStudyMinutes
-  - Last Study: $_lastStudyDate
-  - Streak Updated Today: $_streakUpdatedToday
-  ''');
-}
-
-void _checkFirestoreData() async {
-  final user = _auth.currentUser;
-  if (user == null) return;
-  
-  final doc = await _firestore
-      .collection('users')
-      .doc(user.uid)
-      .collection('metrics')
-      .doc('study')
-      .get();
-  
-  print('Firestore Data: ${doc.data()}');
-}
-
 
   @override
   Widget build(BuildContext context) {
@@ -1076,13 +1084,14 @@ void _checkFirestoreData() async {
           style: TextStyle(
             fontWeight: FontWeight.w600,
             color: Colors.grey[800],
+            fontSize: 24,
           ),
         ),
         backgroundColor: Colors.white,
         elevation: 0,
         actions: [
           IconButton(
-            icon: Icon(Icons.person, color: Colors.grey[800]),
+            icon: Icon(Icons.person, color: Colors.grey[800], size: 28),
             onPressed: () {
               Navigator.push(
                 context,
@@ -1093,20 +1102,18 @@ void _checkFirestoreData() async {
         ],
       ),
       body: SingleChildScrollView(
-        padding: EdgeInsets.all(16),
+        padding: EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildWelcomeSection(),
-            SizedBox(height: 24),
             _buildQuickActions(),
-            SizedBox(height: 24),
+            SizedBox(height: 32),
             _buildTodoSection(),
-            SizedBox(height: 24),
+            SizedBox(height: 32),
             _buildProgressSection(),
-            SizedBox(height: 24),
+            SizedBox(height: 32),
             _buildReminderSection(),
-            SizedBox(height: 24),
+            SizedBox(height: 32),
             _buildMotivationSection(),
           ],
         ),
