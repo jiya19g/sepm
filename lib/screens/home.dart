@@ -14,12 +14,13 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   bool _mounted = true;
 
-@override
-void dispose() {
-  _mounted = false;
-  _studyTimer?.cancel();
-  super.dispose();
-}
+  @override
+  void dispose() {
+    _mounted = false;
+    // Don't cancel timer here - it should continue running
+    super.dispose();
+  }
+
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   String _userName = 'User';
@@ -37,7 +38,7 @@ void dispose() {
   DateTime? _studySessionStart;
   Timer? _studyTimer;
   int _sessionMinutes = 0;
-  bool _streakUpdatedToday = false; 
+  bool _streakUpdatedToday = false;
 
   // UI data
   bool _isRefreshingQuote = false;
@@ -54,25 +55,153 @@ void dispose() {
     '"Success is no accident. It is hard work, perseverance, learning, studying, sacrifice and most of all, love of what you are doing." - Pelé',
   ];
 
-@override
-void initState() {
-  super.initState();
-  _loadUserData();
-  _loadStudyMetrics();
-  
-  // Check streak daily at midnight
-  Timer.periodic(Duration(minutes: 5), (timer) { // Check every 5 minutes
-    final now = DateTime.now();
-    if (now.hour == 0 && now.minute >= 0 && now.minute < 5) {
-      // Reset streak update flag at midnight
-      setState(() {
-        _streakUpdatedToday = false;
-      });
-      _updateFirebaseMetrics();
-    }
-  });
-}
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+    _loadStudyMetrics();
+    
+    // Check streak daily at midnight
+    Timer.periodic(Duration(minutes: 5), (timer) {
+      final now = DateTime.now();
+      if (now.hour == 0 && now.minute >= 0 && now.minute < 5) {
+        setState(() {
+          _streakUpdatedToday = false;
+        });
+        _updateFirebaseMetrics();
+      }
+    });
+  }
 
+  Future<void> _checkActiveStudySession() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final sessionDoc = await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('studySessions')
+          .doc('active')
+          .get();
+
+      if (sessionDoc.exists) {
+        final data = sessionDoc.data()!;
+        final startTime = data['startTime']?.toDate();
+        
+        if (startTime != null) {
+          setState(() {
+            _isStudying = true;
+            _studySessionStart = startTime;
+            _sessionMinutes = DateTime.now().difference(startTime).inMinutes;
+          });
+          
+          // Resume timer
+          _startStudyTimer();
+        }
+      }
+    } catch (e) {
+      print('Error checking active session: $e');
+    }
+  }
+
+  void _startStudySession() {
+    final now = DateTime.now();
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    setState(() {
+      _isStudying = true;
+      _studySessionStart = now;
+      _sessionMinutes = 0;
+      
+      // Set streak to 1 if this is the first study session of the day
+      if (_currentStreak == 0) {
+        _currentStreak = 1;
+        _streakUpdatedToday = true;
+        _lastStudyDate = now;
+      }
+    });
+
+    // Save active session to Firestore
+    _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('studySessions')
+        .doc('active')
+        .set({
+      'startTime': now,
+      'lastUpdated': now,
+    });
+
+    // Immediately update metrics to ensure streak is saved
+    _updateFirebaseMetrics();
+    _startStudyTimer();
+  }
+
+  void _startStudyTimer() {
+    _studyTimer?.cancel();
+    _studyTimer = Timer.periodic(Duration(minutes: 1), (timer) {
+      if (_isStudying) {
+        setState(() {
+          _sessionMinutes++;
+        });
+        // Update Firestore every minute
+        _updateFirebaseMetrics();
+      } else {
+        timer.cancel();
+      }
+    });
+  }
+
+  Future<void> _endStudySession() async {
+    final user = _auth.currentUser;
+    if (user == null || !_isStudying) return;
+
+    // Cancel timer
+    _studyTimer?.cancel();
+    
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    // Update state - accumulate study time instead of resetting
+    setState(() {
+      _isStudying = false;
+      _totalStudyMinutes += _sessionMinutes;
+    });
+
+    // Save completed session
+    await _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('studySessions')
+        .add({
+      'startTime': _studySessionStart,
+      'endTime': now,
+      'durationMinutes': _sessionMinutes,
+      'date': today,
+    });
+
+    // Remove active session
+    await _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('studySessions')
+        .doc('active')
+        .delete();
+
+    // Update last study date
+    setState(() {
+      _lastStudyDate = now;
+      _streakUpdatedToday = true;
+    });
+
+    await _updateFirebaseMetrics();
+    
+    if (mounted) {
+      _showSessionSummary(_sessionMinutes);
+    }
+  }
 
   Future<void> _loadUserData() async {
     final user = _auth.currentUser;
@@ -92,281 +221,212 @@ void initState() {
     return efficiency.clamp(0.0, 100.0);
   }
 
-Future<void> _loadStudyMetrics() async {
-  final user = _auth.currentUser;
-  if (user == null) return;
+  Future<void> _loadStudyMetrics() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
 
-  try {
-    final metricsDoc = await _firestore
-        .collection('users')
-        .doc(user.uid)
-        .collection('metrics')
-        .doc('study')
-        .get();
+    try {
+      // Load metrics from Firestore
+      final metricsDoc = await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('metrics')
+          .doc('study')
+          .get();
 
-    if (metricsDoc.exists) {
-      final data = metricsDoc.data()!;
-      setState(() {
-        _currentStreak = data['currentStreak'] ?? 0;
-        _totalStudyMinutes = data['totalStudyMinutes'] ?? 0;
-        _lastStudyDate = data['lastStudyDate']?.toDate();
-        _completedTasksCount = data['completedTasksCount'] ?? 0;
-        _totalTasksCount = data['totalTasksCount'] ?? 0;
-        _streakUpdatedToday = data['streakUpdatedToday'] ?? false;
-        _efficiencyScore = _calculateEfficiency();
-      });
-    }
-  } catch (e) {
-    print('Error loading metrics: $e');
-  }
-}
+      if (metricsDoc.exists) {
+        final data = metricsDoc.data()!;
+        final now = DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
+        final lastStudyDate = data['lastStudyDate']?.toDate();
+        
+        // Check if we have a study session today
+        bool hasStudyToday = false;
+        if (lastStudyDate != null) {
+          final lastStudyDay = DateTime(
+            lastStudyDate.year,
+            lastStudyDate.month,
+            lastStudyDate.day,
+          );
+          hasStudyToday = lastStudyDay.isAtSameMomentAs(today);
+        }
 
-void _showSessionSummary(int minutes) {
-  final hours = minutes ~/ 60;
-  final remainingMinutes = minutes % 60;
-  final now = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
+        setState(() {
+          // If we have a study session today, keep the streak
+          _currentStreak = hasStudyToday ? (data['currentStreak'] ?? 1) : 0;
+          _totalStudyMinutes = data['totalStudyMinutes'] ?? 0;
+          _lastStudyDate = lastStudyDate;
+          _completedTasksCount = data['completedTasksCount'] ?? 0;
+          _totalTasksCount = data['totalTasksCount'] ?? 0;
+          _streakUpdatedToday = data['streakUpdatedToday'] ?? false;
+          _efficiencyScore = _calculateEfficiency();
+        });
+      }
 
-  showDialog(
-    context: context,
-    barrierDismissible: false,
-    builder: (context) => AlertDialog(
-      title: Row(
-        children: [
-          Icon(Icons.check_circle, color: Colors.green, size: 28),
-          SizedBox(width: 10),
-          Text('Session Completed', style: TextStyle(fontWeight: FontWeight.bold)),
-        ],
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Great job studying today!', style: TextStyle(fontSize: 16)),
-          SizedBox(height: 16),
-          _buildSummaryRow(Icons.timer, 'Duration:', 
-              '$hours ${hours == 1 ? 'hour' : 'hours'} $remainingMinutes minutes'),
-          SizedBox(height: 8),
-          _buildSummaryRow(Icons.today, 'Date:', 
-              DateFormat('MMMM d, y').format(today)),
-          SizedBox(height: 8),
-          if (_currentStreak > 0)
-            _buildSummaryRow(Icons.local_fire_department, 'Current streak:', 
-                '$_currentStreak ${_currentStreak == 1 ? 'day' : 'days'}'),
-          SizedBox(height: 16),
-          Text('Keep up the good work!', 
-              style: TextStyle(fontStyle: FontStyle.italic)),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          style: TextButton.styleFrom(
-            foregroundColor: Theme.of(context).primaryColor,
-          ),
-          child: Text('DISMISS'),
-        ),
-      ],
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-    ),
-  );
-}
+      // Load active session if exists
+      final activeSessionDoc = await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('studySessions')
+          .doc('active')
+          .get();
 
-Widget _buildSummaryRow(IconData icon, String label, String value) {
-  return Row(
-    children: [
-      Icon(icon, size: 20, color: Colors.grey[600]),
-      SizedBox(width: 8),
-      Text(label, style: TextStyle(fontWeight: FontWeight.bold)),
-      SizedBox(width: 8),
-      Text(value),
-    ],
-  );
-}
+      if (activeSessionDoc.exists) {
+        final sessionData = activeSessionDoc.data()!;
+        final startTime = sessionData['startTime']?.toDate();
+        
+        if (startTime != null) {
+          setState(() {
+            _isStudying = true;
+            _studySessionStart = startTime;
+            _sessionMinutes = DateTime.now().difference(startTime).inMinutes;
+            // If we're studying, ensure streak is at least 1
+            if (_currentStreak == 0) {
+              _currentStreak = 1;
+              _streakUpdatedToday = true;
+              _lastStudyDate = DateTime.now();
+            }
+          });
+          
+          // Resume timer
+          _startStudyTimer();
+        }
+      }
 
- void _startStudySession() {
-  // Cancel any existing timer (safety check)
-  _studyTimer?.cancel();
-  
-  final now = DateTime.now();
+      // Calculate total study time from all sessions
+      final sessionsSnapshot = await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('studySessions')
+          .where('endTime', isNull: false)  // Only completed sessions
+          .get();
 
-  setState(() {
-    _isStudying = true;
-    _studySessionStart = now;
-    _sessionMinutes = 0;
-    
-    // Create new timer
-    _studyTimer = Timer.periodic(Duration(minutes: 1), (timer) {
-      // Check if still studying
+      int totalMinutes = 0;
+      for (var doc in sessionsSnapshot.docs) {
+        final data = doc.data();
+        totalMinutes += data['durationMinutes'] as int? ?? 0;
+      }
+
+      // Add current session minutes if studying
       if (_isStudying) {
-        setState(() {
-          _sessionMinutes++;
-          _totalStudyMinutes++;
-        });
-      } else {
-        timer.cancel(); // Safety measure
+        totalMinutes += _sessionMinutes;
       }
-    });
-  });
-}
 
-  Future<void> _endStudySession() async {
-  final user = _auth.currentUser;
-  if (user == null || !_isStudying) return;
+      setState(() {
+        _totalStudyMinutes = totalMinutes;
+      });
 
-  // Cancel timer immediately
-  _studyTimer?.cancel();
-  
-  final now = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
-
-  // Update state first before any async operations
-  setState(() {
-    _isStudying = false; // This must come first
-    _totalStudyMinutes += _sessionMinutes;
-  });
-
-  // Streak update logic
-  if (_lastStudyDate == null) {
-    // First ever study session
-    setState(() {
-      _currentStreak = 1;
-      _streakUpdatedToday = true;
-      _lastStudyDate = now;
-    });
-  } else {
-    final lastStudyDay = DateTime(
-      _lastStudyDate!.year,
-      _lastStudyDate!.month,
-      _lastStudyDate!.day,
-    );
-    
-    if (lastStudyDay.isBefore(today)) {
-      // New day - check if consecutive
-      if (lastStudyDay.isAtSameMomentAs(today.subtract(Duration(days: 1)))) {
-        // Consecutive day
-        setState(() {
-          _currentStreak++;
-          _streakUpdatedToday = true;
-          _lastStudyDate = now;
-        });
-      } else {
-        // Not consecutive - reset streak
-        setState(() {
-          _currentStreak = 1;
-          _streakUpdatedToday = true;
-          _lastStudyDate = now;
-        });
-      }
+      // Update Firestore with latest metrics
+      await _updateFirebaseMetrics();
+    } catch (e) {
+      print('Error loading metrics: $e');
     }
   }
 
-  // Save to Firestore
-  await _updateFirebaseMetrics();
-  
-  // Debug print
-  _printCurrentState();
-  
-  // Show summary
-  if (mounted) {
-    _showSessionSummary(_sessionMinutes);
-  }
-}
-Future<void> _updateStreakAndStudyTime() async {
-  final user = _auth.currentUser;
-  if (user == null) return;
+  void _showSessionSummary(int minutes) {
+    final hours = minutes ~/ 60;
+    final remainingMinutes = minutes % 60;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
 
-  final now = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
-
-  // Get all study sessions from Firestore
-  final sessionsSnapshot = await _firestore
-      .collection('users')
-      .doc(user.uid)
-      .collection('studySessions')
-      .orderBy('date', descending: true)
-      .get();
-
-  if (sessionsSnapshot.docs.isEmpty) return;
-
-  // Calculate total study time
-  int totalMinutes = sessionsSnapshot.docs.fold(0, (sum, doc) {
-    final data = doc.data();
-    return sum + (data['durationMinutes'] as int? ?? 0);
-  });
-
-  // Calculate streak
-  int streak = 0;
-  DateTime currentDate = today;
-  bool streakContinues = true;
-  
-  // Check consecutive days with study sessions
-  while (streakContinues) {
-    final hasSessionOnDate = sessionsSnapshot.docs.any((doc) {
-      final sessionDate = (doc.data()['date'] as Timestamp).toDate();
-      return sessionDate.year == currentDate.year &&
-             sessionDate.month == currentDate.month &&
-             sessionDate.day == currentDate.day;
-    });
-
-    if (hasSessionOnDate) {
-      streak++;
-      currentDate = currentDate.subtract(Duration(days: 1));
-    } else {
-      streakContinues = false;
-    }
-  }
-
-  setState(() {
-    _currentStreak = streak;
-    _totalStudyMinutes = totalMinutes;
-    _lastStudyDate = sessionsSnapshot.docs.first.data()['date']?.toDate();
-  });
-
-  await _updateFirebaseMetrics();
-}
-
-  Widget _buildStudySessionButton() {
-  return Container(
-    margin: EdgeInsets.symmetric(vertical: 16),
-    child: ElevatedButton(
-      style: ElevatedButton.styleFrom(
-        foregroundColor: Colors.white,
-        backgroundColor: _isStudying ? Colors.red[400] : Theme.of(context).primaryColor,
-        padding: EdgeInsets.symmetric(vertical: 20, horizontal: 32),
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.green, size: 28),
+            SizedBox(width: 10),
+            Text('Session Completed', style: TextStyle(fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Great job studying today!', style: TextStyle(fontSize: 16)),
+            SizedBox(height: 16),
+            _buildSummaryRow(Icons.timer, 'Duration:', 
+                '$hours ${hours == 1 ? 'hour' : 'hours'} $remainingMinutes minutes'),
+            SizedBox(height: 8),
+            _buildSummaryRow(Icons.today, 'Date:', 
+                DateFormat('MMMM d, y').format(today)),
+            SizedBox(height: 8),
+            if (_currentStreak > 0)
+              _buildSummaryRow(Icons.local_fire_department, 'Current streak:', 
+                  '$_currentStreak ${_currentStreak == 1 ? 'day' : 'days'}'),
+            SizedBox(height: 16),
+            Text('Keep up the good work!', 
+                style: TextStyle(fontStyle: FontStyle.italic)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).primaryColor,
+            ),
+            child: Text('DISMISS'),
+          ),
+        ],
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
-        elevation: 4,
-        shadowColor: _isStudying ? Colors.red[100] : Theme.of(context).primaryColor.withOpacity(0.3),
       ),
-      onPressed: () async {
-        if (_isStudying) {
-          await _endStudySession();
-        } else {
-          _startStudySession();
-        }
-      },
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(_isStudying ? Icons.stop : Icons.play_arrow, size: 28),
-          SizedBox(width: 12),
-          Text(
-            _isStudying ? 'STOP SESSION' : 'START STUDYING',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.5,
-            ),
+    );
+  }
+
+  Widget _buildSummaryRow(IconData icon, String label, String value) {
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: Colors.grey[600]),
+        SizedBox(width: 8),
+        Text(label, style: TextStyle(fontWeight: FontWeight.bold)),
+        SizedBox(width: 8),
+        Text(value),
+      ],
+    );
+  }
+
+  Widget _buildStudySessionButton() {
+    return Container(
+      margin: EdgeInsets.symmetric(vertical: 16),
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          foregroundColor: Colors.white,
+          backgroundColor: _isStudying ? Colors.red[400] : Theme.of(context).primaryColor,
+          padding: EdgeInsets.symmetric(vertical: 20, horizontal: 32),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
           ),
-        ],
+          elevation: 4,
+          shadowColor: _isStudying ? Colors.red[100] : Theme.of(context).primaryColor.withOpacity(0.3),
+        ),
+        onPressed: () async {
+          if (_isStudying) {
+            await _endStudySession();
+          } else {
+            _startStudySession();
+          }
+        },
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(_isStudying ? Icons.stop : Icons.play_arrow, size: 28),
+            SizedBox(width: 12),
+            Text(
+              _isStudying ? 'STOP SESSION' : 'START STUDYING',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildProgressSection() {
     return Column(
@@ -760,30 +820,59 @@ Future<void> _updateStreakAndStudyTime() async {
     await _updateFirebaseMetrics();
   }
 
-Future<void> _updateFirebaseMetrics() async {
-  if (!_mounted) return;
-  final user = _auth.currentUser;
-  if (user == null) return;
+  Future<void> _updateFirebaseMetrics() async {
+    if (!_mounted) return;
+    final user = _auth.currentUser;
+    if (user == null) return;
 
-  try {
-    await _firestore.collection('users').doc(user.uid).collection('metrics').doc('study').set({
-      'currentStreak': _currentStreak,
-      'totalStudyMinutes': _totalStudyMinutes,
-      'lastStudyDate': _lastStudyDate != null ? Timestamp.fromDate(_lastStudyDate!) : null,
-      'completedTasksCount': _completedTasksCount,
-      'totalTasksCount': _totalTasksCount,
-      'streakUpdatedToday': _streakUpdatedToday,
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-  } catch (e) {
-    print('Error updating metrics: $e');
-    if (_mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to save session data')),
-      );
+    try {
+      // Calculate total study time including current session
+      int totalMinutes = _totalStudyMinutes;
+      if (_isStudying) {
+        totalMinutes += _sessionMinutes;
+      }
+
+      // Create a batch write to ensure all updates are atomic
+      final batch = _firestore.batch();
+      final metricsRef = _firestore.collection('users').doc(user.uid).collection('metrics').doc('study');
+      
+      batch.set(metricsRef, {
+        'currentStreak': _currentStreak,
+        'totalStudyMinutes': totalMinutes,
+        'lastStudyDate': _lastStudyDate != null ? Timestamp.fromDate(_lastStudyDate!) : null,
+        'completedTasksCount': _completedTasksCount,
+        'totalTasksCount': _totalTasksCount,
+        'streakUpdatedToday': _streakUpdatedToday,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      // Update active session if studying
+      if (_isStudying && _studySessionStart != null) {
+        final activeSessionRef = _firestore
+            .collection('users')
+            .doc(user.uid)
+            .collection('studySessions')
+            .doc('active');
+            
+        batch.set(activeSessionRef, {
+          'startTime': _studySessionStart,
+          'lastUpdated': FieldValue.serverTimestamp(),
+          'currentMinutes': _sessionMinutes,
+        });
+      }
+
+      // Commit the batch
+      await batch.commit();
+    } catch (e) {
+      print('Error updating metrics: $e');
+      if (_mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save session data')),
+        );
+      }
     }
   }
-}
+
   Widget _buildReminderSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1044,30 +1133,30 @@ Future<void> _updateFirebaseMetrics() async {
       ),
     );
   }
-void _printCurrentState() {
-  print('''
-  Current State:
-  - Streak: $_currentStreak
-  - Study Minutes: $_totalStudyMinutes
-  - Last Study: $_lastStudyDate
-  - Streak Updated Today: $_streakUpdatedToday
-  ''');
-}
 
-void _checkFirestoreData() async {
-  final user = _auth.currentUser;
-  if (user == null) return;
-  
-  final doc = await _firestore
-      .collection('users')
-      .doc(user.uid)
-      .collection('metrics')
-      .doc('study')
-      .get();
-  
-  print('Firestore Data: ${doc.data()}');
-}
+  void _printCurrentState() {
+    print('''
+    Current State:
+    - Streak: $_currentStreak
+    - Study Minutes: $_totalStudyMinutes
+    - Last Study: $_lastStudyDate
+    - Streak Updated Today: $_streakUpdatedToday
+    ''');
+  }
 
+  void _checkFirestoreData() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    
+    final doc = await _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('metrics')
+        .doc('study')
+        .get();
+    
+    print('Firestore Data: ${doc.data()}');
+  }
 
   @override
   Widget build(BuildContext context) {
