@@ -44,10 +44,9 @@ void dispose() {
   String _motivationalQuote = '"Success is the sum of small efforts, repeated day in and day out."';
   String _quoteAuthor = '- Robert Collier';
   final List<Map<String, dynamic>> _quickActions = [
-    {'icon': Icons.video_library, 'label': 'Lectures', 'color': Colors.blue[100]},
-    {'icon': Icons.article, 'label': 'Notes', 'color': Colors.green[100]},
-    {'icon': Icons.quiz, 'label': 'Quizzes', 'color': Colors.orange[100]},
-    {'icon': Icons.group, 'label': 'Groups', 'color': Colors.purple[100]},
+    {'icon': Icons.video_library, 'label': 'Lectures', 'color': Colors.blue[100], 'route': '/lectures'},
+    {'icon': Icons.smart_toy, 'label': 'Chatbot', 'color': Colors.green[100], 'route': '/chatbot'},
+    {'icon': Icons.quiz, 'label': 'Quizzes', 'color': Colors.orange[100], 'route': '/quizzes'},
   ];
   final List<String> _quotes = [
     '"The expert in anything was once a beginner." - Helen Hayes',
@@ -543,27 +542,26 @@ Future<void> _updateStreakAndStudyTime() async {
           ),
         ),
         SizedBox(height: 16),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-            childAspectRatio: 1.5,
-          ),
-          itemCount: _quickActions.length,
-          itemBuilder: (context, index) {
-            final action = _quickActions[index];
-            return InkWell(
-              onTap: () => _showQuickActionDialog(context, action['label']),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: _quickActions.map((action) {
+            return GestureDetector(
+              onTap: () => Navigator.pushNamed(context, action['route']),
               child: Container(
+                width: 100,
+                padding: EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: action['color'],
                   borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 5,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
                 ),
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
                       action['icon'],
@@ -574,7 +572,7 @@ Future<void> _updateStreakAndStudyTime() async {
                     Text(
                       action['label'],
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: 14,
                         fontWeight: FontWeight.w500,
                         color: Colors.grey[800],
                       ),
@@ -583,25 +581,9 @@ Future<void> _updateStreakAndStudyTime() async {
                 ),
               ),
             );
-          },
+          }).toList(),
         ),
       ],
-    );
-  }
-
-  void _showQuickActionDialog(BuildContext context, String action) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Quick Action: $action'),
-        content: Text('This feature is coming soon!'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('OK'),
-          ),
-        ],
-      ),
     );
   }
 

@@ -110,29 +110,25 @@ class _CareerScreenState extends State<CareerScreen> {
   Future<void> _launchJobUrl(String url) async {
     try {
       final uri = Uri.parse(url);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(
-          uri,
-          mode: LaunchMode.externalApplication,
-        );
-      } else {
-        await Clipboard.setData(ClipboardData(text: url));
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Could not open link - URL copied to clipboard'),
-              action: SnackBarAction(
-                label: 'Try Again',
-                onPressed: () => _launchJobUrl(url),
-              ),
-            ),
-          );
-        }
+      final bool launched = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+      
+      if (!launched) {
+        throw 'Could not launch $url';
       }
     } catch (e) {
+      await Clipboard.setData(ClipboardData(text: url));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: ${e.toString()}')),
+          SnackBar(
+            content: Text('Could not open link - URL copied to clipboard'),
+            action: SnackBarAction(
+              label: 'Try Again',
+              onPressed: () => _launchJobUrl(url),
+            ),
+          ),
         );
       }
     }
