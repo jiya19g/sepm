@@ -29,6 +29,7 @@ class _HomeScreenState extends State<HomeScreen> {
   DateTime? _studySessionStart;
   Timer? _studyTimer;
   int _sessionMinutes = 0;
+  bool _streakUpdatedToday = false; 
 
   // UI data
   bool _isRefreshingQuote = false;
@@ -46,12 +47,24 @@ class _HomeScreenState extends State<HomeScreen> {
     '"Success is no accident. It is hard work, perseverance, learning, studying, sacrifice and most of all, love of what you are doing." - Pelé',
   ];
 
-  @override
-  void initState() {
-    super.initState();
-    _loadUserData();
-    _loadStudyMetrics();
-  }
+@override
+void initState() {
+  super.initState();
+  _loadUserData();
+  _loadStudyMetrics();
+  
+  // Check streak daily at midnight
+  Timer.periodic(Duration(minutes: 5), (timer) { // Check every 5 minutes
+    final now = DateTime.now();
+    if (now.hour == 0 && now.minute >= 0 && now.minute < 5) {
+      // Reset streak update flag at midnight
+      setState(() {
+        _streakUpdatedToday = false;
+      });
+      _updateFirebaseMetrics();
+    }
+  });
+}
 
   @override
   void dispose() {
@@ -71,11 +84,24 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _loadStudyMetrics() async {
-    final user = _auth.currentUser;
-    if (user == null) return;
+  double _calculateEfficiency() {
+    if (_totalTasksCount <= 0) return 0.0;
+    double efficiency = (_completedTasksCount / _totalTasksCount) * 100;
+    return efficiency.clamp(0.0, 100.0);
+  }
 
-    final metricsDoc = await _firestore.collection('users').doc(user.uid).collection('metrics').doc('study').get();
+Future<void> _loadStudyMetrics() async {
+  final user = _auth.currentUser;
+  if (user == null) return;
+
+  try {
+    final metricsDoc = await _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('metrics')
+        .doc('study')
+        .get();
+
     if (metricsDoc.exists) {
       final data = metricsDoc.data()!;
       setState(() {
@@ -83,115 +109,234 @@ class _HomeScreenState extends State<HomeScreen> {
         _totalStudyMinutes = data['totalStudyMinutes'] ?? 0;
         _lastStudyDate = data['lastStudyDate']?.toDate();
         _completedTasksCount = data['completedTasksCount'] ?? 0;
-        _totalTasksCount = data['totalTasksCount'] ?? 1;
-        _efficiencyScore = _completedTasksCount / _totalTasksCount;
+        _totalTasksCount = data['totalTasksCount'] ?? 0;
+        _streakUpdatedToday = data['streakUpdatedToday'] ?? false;
+        _efficiencyScore = _calculateEfficiency();
       });
     }
+  } catch (e) {
+    print('Error loading metrics: $e');
   }
+}
 
-  void _startStudySession() {
-    setState(() {
-      _isStudying = true;
-      _studySessionStart = DateTime.now();
-      _sessionMinutes = 0;
-      
-      _studyTimer = Timer.periodic(Duration(minutes: 1), (timer) {
-        setState(() {
-          _sessionMinutes++;
-          _totalStudyMinutes++;
-        });
-      });
-    });
-  }
+void _showSessionSummary(int minutes) {
+  final hours = minutes ~/ 60;
+  final remainingMinutes = minutes % 60;
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
 
-  Future<void> _endStudySession() async {
-    final user = _auth.currentUser;
-    if (user == null || !_isStudying) return;
-
-    _studyTimer?.cancel();
-    
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final yesterday = today.subtract(Duration(days: 1));
-
-    int newStreak = _currentStreak;
-    if (_lastStudyDate == null) {
-      newStreak = 1;
-    } else {
-      final lastStudyDay = DateTime(_lastStudyDate!.year, _lastStudyDate!.month, _lastStudyDate!.day);
-      if (lastStudyDay.isAtSameMomentAs(today)) {
-        // No streak change
-      } else if (lastStudyDay.isAtSameMomentAs(yesterday)) {
-        newStreak++;
-      } else {
-        newStreak = 1;
-      }
-    }
-
-    setState(() {
-      _isStudying = false;
-      _currentStreak = newStreak;
-      _lastStudyDate = now;
-    });
-
-    await _firestore.collection('users').doc(user.uid).collection('metrics').doc('study').set({
-      'currentStreak': newStreak,
-      'totalStudyMinutes': _totalStudyMinutes,
-      'lastStudyDate': now,
-      'completedTasksCount': _completedTasksCount,
-      'totalTasksCount': _totalTasksCount,
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-
-    _showSessionSummary(_sessionMinutes);
-  }
-
-  void _showSessionSummary(int minutes) {
-    final hours = minutes ~/ 60;
-    final remainingMinutes = minutes % 60;
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Study Session Completed'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('You studied for $hours hours and $remainingMinutes minutes.'),
-            SizedBox(height: 16),
-            if (_currentStreak > 1) Text('🔥 Current streak: $_currentStreak days'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('OK'),
-          ),
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => AlertDialog(
+      title: Row(
+        children: [
+          Icon(Icons.check_circle, color: Colors.green, size: 28),
+          SizedBox(width: 10),
+          Text('Session Completed', style: TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Great job studying today!', style: TextStyle(fontSize: 16)),
+          SizedBox(height: 16),
+          _buildSummaryRow(Icons.timer, 'Duration:', 
+              '$hours ${hours == 1 ? 'hour' : 'hours'} $remainingMinutes minutes'),
+          SizedBox(height: 8),
+          _buildSummaryRow(Icons.today, 'Date:', 
+              DateFormat('MMMM d, y').format(today)),
+          SizedBox(height: 8),
+          if (_currentStreak > 0)
+            _buildSummaryRow(Icons.local_fire_department, 'Current streak:', 
+                '$_currentStreak ${_currentStreak == 1 ? 'day' : 'days'}'),
+          SizedBox(height: 16),
+          Text('Keep up the good work!', 
+              style: TextStyle(fontStyle: FontStyle.italic)),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          style: TextButton.styleFrom(
+            foregroundColor: Theme.of(context).primaryColor,
+          ),
+          child: Text('DISMISS'),
+        ),
+      ],
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+    ),
+  );
+}
+
+Widget _buildSummaryRow(IconData icon, String label, String value) {
+  return Row(
+    children: [
+      Icon(icon, size: 20, color: Colors.grey[600]),
+      SizedBox(width: 8),
+      Text(label, style: TextStyle(fontWeight: FontWeight.bold)),
+      SizedBox(width: 8),
+      Text(value),
+    ],
+  );
+}
+
+ void _startStudySession() {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+
+  setState(() {
+    _isStudying = true;
+    _studySessionStart = now;
+    _sessionMinutes = 0;
+    
+    _studyTimer = Timer.periodic(Duration(minutes: 1), (timer) {
+      setState(() {
+        _sessionMinutes++;
+        _totalStudyMinutes++;
+      });
+    });
+  });
+}
+
+  Future<void> _endStudySession() async {
+  final user = _auth.currentUser;
+  if (user == null || !_isStudying) return;
+
+  _studyTimer?.cancel();
+  
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+
+  // Always update study minutes
+  setState(() {
+    _totalStudyMinutes += _sessionMinutes;
+  });
+
+  // Streak update logic - simplified and more reliable
+  if (_lastStudyDate == null) {
+    // First ever study session
+    setState(() {
+      _currentStreak = 1;
+      _streakUpdatedToday = true;
+      _lastStudyDate = now;
+    });
+  } else {
+    final lastStudyDay = DateTime(
+      _lastStudyDate!.year,
+      _lastStudyDate!.month,
+      _lastStudyDate!.day,
     );
+    
+    if (lastStudyDay.isBefore(today)) {
+      // New day - check if consecutive
+      if (lastStudyDay.isAtSameMomentAs(today.subtract(Duration(days: 1)))) {
+        // Consecutive day
+        setState(() {
+          _currentStreak++;
+          _streakUpdatedToday = true;
+          _lastStudyDate = now;
+        });
+      } else {
+        // Not consecutive - reset streak
+        setState(() {
+          _currentStreak = 1;
+          _streakUpdatedToday = true;
+          _lastStudyDate = now;
+        });
+      }
+    }
+    // If same day, don't update streak again
   }
+
+  // Save to Firestore
+  await _updateFirebaseMetrics();
+  _showSessionSummary(_sessionMinutes);
+}
+Future<void> _updateStreakAndStudyTime() async {
+  final user = _auth.currentUser;
+  if (user == null) return;
+
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+
+  // Get all study sessions from Firestore
+  final sessionsSnapshot = await _firestore
+      .collection('users')
+      .doc(user.uid)
+      .collection('studySessions')
+      .orderBy('date', descending: true)
+      .get();
+
+  if (sessionsSnapshot.docs.isEmpty) return;
+
+  // Calculate total study time
+  int totalMinutes = sessionsSnapshot.docs.fold(0, (sum, doc) {
+    final data = doc.data();
+    return sum + (data['durationMinutes'] as int? ?? 0);
+  });
+
+  // Calculate streak
+  int streak = 0;
+  DateTime currentDate = today;
+  bool streakContinues = true;
+  
+  // Check consecutive days with study sessions
+  while (streakContinues) {
+    final hasSessionOnDate = sessionsSnapshot.docs.any((doc) {
+      final sessionDate = (doc.data()['date'] as Timestamp).toDate();
+      return sessionDate.year == currentDate.year &&
+             sessionDate.month == currentDate.month &&
+             sessionDate.day == currentDate.day;
+    });
+
+    if (hasSessionOnDate) {
+      streak++;
+      currentDate = currentDate.subtract(Duration(days: 1));
+    } else {
+      streakContinues = false;
+    }
+  }
+
+  setState(() {
+    _currentStreak = streak;
+    _totalStudyMinutes = totalMinutes;
+    _lastStudyDate = sessionsSnapshot.docs.first.data()['date']?.toDate();
+  });
+
+  await _updateFirebaseMetrics();
+}
 
   Widget _buildStudySessionButton() {
     return Container(
       margin: EdgeInsets.symmetric(vertical: 16),
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(
-          backgroundColor: _isStudying ? Colors.red : Colors.green,
-          padding: EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+          foregroundColor: Colors.white,
+          backgroundColor: _isStudying ? Colors.red[400] : Theme.of(context).primaryColor,
+          padding: EdgeInsets.symmetric(vertical: 20, horizontal: 32),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(16),
           ),
+          elevation: 4,
+          shadowColor: _isStudying ? Colors.red[100] : Theme.of(context).primaryColor.withOpacity(0.3),
         ),
         onPressed: _isStudying ? _endStudySession : _startStudySession,
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(_isStudying ? Icons.stop : Icons.play_arrow),
-            SizedBox(width: 8),
+            Icon(_isStudying ? Icons.stop_circle_outlined : Icons.play_circle_fill_outlined, size: 28),
+            SizedBox(width: 12),
             Text(
-              _isStudying ? 'END STUDY SESSION' : 'START STUDY SESSION',
-              style: TextStyle(fontSize: 16),
+              _isStudying ? 'STOP SESSION' : 'START STUDYING',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.5,
+              ),
             ),
           ],
         ),
@@ -230,7 +375,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             _buildStatItem(
               icon: Icons.trending_up,
-              value: '${(_efficiencyScore * 100).toStringAsFixed(0)}%',
+              value: '${_efficiencyScore.toStringAsFixed(0)}%',
               label: 'Efficiency',
               color: Colors.green,
             ),
@@ -292,7 +437,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 '${_totalStudyMinutes % 60} minutes.\n\n'
                 'Tracked through study sessions.';
     } else if (metric == 'Efficiency') {
-      content = 'Efficiency: ${(_efficiencyScore * 100).toStringAsFixed(0)}%\n\n'
+      content = 'Efficiency: ${_efficiencyScore.toStringAsFixed(0)}%\n\n'
                 'Based on tasks completed ($_completedTasksCount out of $_totalTasksCount)';
     }
 
@@ -476,7 +621,8 @@ class _HomeScreenState extends State<HomeScreen> {
               if (_totalTasksCount != tasks.length) {
                 setState(() {
                   _totalTasksCount = tasks.length;
-                  _efficiencyScore = _completedTasksCount / max(1, _totalTasksCount);
+                  _completedTasksCount = tasks.where((t) => (t.data() as Map<String, dynamic>)['completed'] == true).length;
+                  _efficiencyScore = _calculateEfficiency();
                 });
                 _updateFirebaseMetrics();
               }
@@ -521,11 +667,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     trailing: IconButton(
                       icon: Icon(Icons.delete),
                       onPressed: () {
-                        if (taskData['completed']) {
-                          _completedTasksCount = max(0, _completedTasksCount - 1);
-                        }
-                        _totalTasksCount = max(0, _totalTasksCount - 1);
-                        _efficiencyScore = _completedTasksCount / max(1, _totalTasksCount);
+                        setState(() {
+                          if (taskData['completed']) {
+                            _completedTasksCount = max(0, _completedTasksCount - 1);
+                          }
+                          _totalTasksCount = max(0, _totalTasksCount - 1);
+                          _efficiencyScore = _calculateEfficiency();
+                        });
                         
                         _firestore
                             .collection('users')
@@ -579,7 +727,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 });
                 setState(() {
                   _totalTasksCount++;
-                  _efficiencyScore = _completedTasksCount / _totalTasksCount;
+                  _efficiencyScore = _calculateEfficiency();
                 });
                 _updateFirebaseMetrics();
                 Navigator.pop(context);
@@ -599,26 +747,40 @@ class _HomeScreenState extends State<HomeScreen> {
       } else {
         _completedTasksCount = max(0, _completedTasksCount - 1);
       }
-      _efficiencyScore = _completedTasksCount / max(1, _totalTasksCount);
+      _efficiencyScore = _calculateEfficiency();
     });
 
     await _updateFirebaseMetrics();
   }
 
-  Future<void> _updateFirebaseMetrics() async {
-    final user = _auth.currentUser;
-    if (user == null) return;
+Future<void> _updateFirebaseMetrics() async {
+  final user = _auth.currentUser;
+  if (user == null) return;
 
+  try {
     await _firestore.collection('users').doc(user.uid).collection('metrics').doc('study').set({
       'currentStreak': _currentStreak,
       'totalStudyMinutes': _totalStudyMinutes,
-      'lastStudyDate': _lastStudyDate,
+      'lastStudyDate': _lastStudyDate != null ? Timestamp.fromDate(_lastStudyDate!) : null,
       'completedTasksCount': _completedTasksCount,
       'totalTasksCount': _totalTasksCount,
+      'streakUpdatedToday': _streakUpdatedToday,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+    
+    // Also save the session details
+    if (_studySessionStart != null) {
+      await _firestore.collection('users').doc(user.uid).collection('studySessions').add({
+        'startTime': Timestamp.fromDate(_studySessionStart!),
+        'endTime': Timestamp.now(),
+        'durationMinutes': _sessionMinutes,
+        'date': Timestamp.fromDate(DateTime.now()),
+      });
+    }
+  } catch (e) {
+    print('Error saving to Firestore: $e');
   }
-
+}
   Widget _buildReminderSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -879,6 +1041,30 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+void _printCurrentState() {
+  print('''
+  Current State:
+  - Streak: $_currentStreak
+  - Study Minutes: $_totalStudyMinutes
+  - Last Study: $_lastStudyDate
+  - Streak Updated Today: $_streakUpdatedToday
+  ''');
+}
+
+void _checkFirestoreData() async {
+  final user = _auth.currentUser;
+  if (user == null) return;
+  
+  final doc = await _firestore
+      .collection('users')
+      .doc(user.uid)
+      .collection('metrics')
+      .doc('study')
+      .get();
+  
+  print('Firestore Data: ${doc.data()}');
+}
+
 
   @override
   Widget build(BuildContext context) {
@@ -899,9 +1085,9 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: Icon(Icons.person, color: Colors.grey[800]),
             onPressed: () {
               Navigator.push(
-    context,
-    MaterialPageRoute(builder: (context) => ProfileScreen()),
-  );
+                context,
+                MaterialPageRoute(builder: (context) => ProfileScreen()),
+              );
             },
           ),
         ],
