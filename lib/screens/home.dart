@@ -12,6 +12,14 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  bool _mounted = true;
+
+@override
+void dispose() {
+  _mounted = false;
+  _studyTimer?.cancel();
+  super.dispose();
+}
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   String _userName = 'User';
@@ -66,6 +74,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+
   @override
   void dispose() {
     _studyTimer?.cancel();
@@ -73,6 +82,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _metricsSubscription?.cancel();
     super.dispose();
   }
+
 
   void _setupRealTimeListeners() {
     final user = _auth.currentUser;
@@ -233,6 +243,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final now = DateTime.now();
 
+
     try {
       await _firestore
           .collection('users')
@@ -256,9 +267,37 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+ void _startStudySession() {
+  // Cancel any existing timer (safety check)
+  _studyTimer?.cancel();
+  
+  final now = DateTime.now();
+
+  setState(() {
+    _isStudying = true;
+    _studySessionStart = now;
+    _sessionMinutes = 0;
+    
+    // Create new timer
+    _studyTimer = Timer.periodic(Duration(minutes: 1), (timer) {
+      // Check if still studying
+      if (_isStudying) {
+        setState(() {
+          _sessionMinutes++;
+          _totalStudyMinutes++;
+        });
+      } else {
+        timer.cancel(); // Safety measure
+      }
+    });
+  });
+}
+
+
   Future<void> _endStudySession() async {
     final user = _auth.currentUser;
     if (user == null || !_isStudying) return;
+
 
     try {
       _studyTimer?.cancel();
@@ -285,6 +324,43 @@ class _HomeScreenState extends State<HomeScreen> {
           'endTime': Timestamp.now(),
           'durationMinutes': _sessionMinutes,
           'date': Timestamp.fromDate(today),
+
+  // Cancel timer immediately
+  _studyTimer?.cancel();
+  
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+
+  // Update state first before any async operations
+  setState(() {
+    _isStudying = false; // This must come first
+    _totalStudyMinutes += _sessionMinutes;
+  });
+
+  // Streak update logic
+  if (_lastStudyDate == null) {
+    // First ever study session
+    setState(() {
+      _currentStreak = 1;
+      _streakUpdatedToday = true;
+      _lastStudyDate = now;
+    });
+  } else {
+    final lastStudyDay = DateTime(
+      _lastStudyDate!.year,
+      _lastStudyDate!.month,
+      _lastStudyDate!.day,
+    );
+    
+    if (lastStudyDay.isBefore(today)) {
+      // New day - check if consecutive
+      if (lastStudyDay.isAtSameMomentAs(today.subtract(Duration(days: 1)))) {
+        // Consecutive day
+        setState(() {
+          _currentStreak++;
+          _streakUpdatedToday = true;
+          _lastStudyDate = now;
+
         });
       }
 
@@ -318,6 +394,25 @@ class _HomeScreenState extends State<HomeScreen> {
           }
         }
       }
+
+    }
+  }
+
+  // Save to Firestore
+  await _updateFirebaseMetrics();
+  
+  // Debug print
+  _printCurrentState();
+  
+  // Show summary
+  if (mounted) {
+    _showSessionSummary(_sessionMinutes);
+  }
+}
+Future<void> _updateStreakAndStudyTime() async {
+  final user = _auth.currentUser;
+  if (user == null) return;
+
 
       setState(() {
         _isStudying = false;
@@ -357,6 +452,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildStudySessionButton() {
+
     return Container(
       margin: EdgeInsets.symmetric(vertical: 16),
       child: ElevatedButton(
@@ -383,12 +479,46 @@ class _HomeScreenState extends State<HomeScreen> {
                 fontWeight: FontWeight.w600,
                 letterSpacing: 0.5,
               ),
-            ),
-          ],
+
+  return Container(
+    margin: EdgeInsets.symmetric(vertical: 16),
+    child: ElevatedButton(
+      style: ElevatedButton.styleFrom(
+        foregroundColor: Colors.white,
+        backgroundColor: _isStudying ? Colors.red[400] : Theme.of(context).primaryColor,
+        padding: EdgeInsets.symmetric(vertical: 20, horizontal: 32),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
         ),
+        elevation: 4,
+        shadowColor: _isStudying ? Colors.red[100] : Theme.of(context).primaryColor.withOpacity(0.3),
       ),
-    );
-  }
+      onPressed: () async {
+        if (_isStudying) {
+          await _endStudySession();
+        } else {
+          _startStudySession();
+        }
+      },
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(_isStudying ? Icons.stop : Icons.play_arrow, size: 28),
+          SizedBox(width: 12),
+          Text(
+            _isStudying ? 'STOP SESSION' : 'START STUDYING',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
 
   Widget _buildProgressSection() {
     return Column(
@@ -797,6 +927,32 @@ class _HomeScreenState extends State<HomeScreen> {
 
     await _updateFirebaseMetrics();
   }
+
+
+Future<void> _updateFirebaseMetrics() async {
+  if (!_mounted) return;
+  final user = _auth.currentUser;
+  if (user == null) return;
+
+  try {
+    await _firestore.collection('users').doc(user.uid).collection('metrics').doc('study').set({
+      'currentStreak': _currentStreak,
+      'totalStudyMinutes': _totalStudyMinutes,
+      'lastStudyDate': _lastStudyDate != null ? Timestamp.fromDate(_lastStudyDate!) : null,
+      'completedTasksCount': _completedTasksCount,
+      'totalTasksCount': _totalTasksCount,
+      'streakUpdatedToday': _streakUpdatedToday,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  } catch (e) {
+    print('Error updating metrics: $e');
+    if (_mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to save session data')),
+      );
+    }
+  }
+}
 
   Widget _buildReminderSection() {
     return Column(
