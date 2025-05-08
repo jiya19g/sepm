@@ -334,31 +334,40 @@ class _HomeScreenState extends State<HomeScreen> {
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         title: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.check_circle, color: Colors.green, size: 28),
             SizedBox(width: 10),
-            Text('Session Completed', style: TextStyle(fontWeight: FontWeight.bold)),
+            Flexible(
+              child: Text(
+                'Session Completed',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Great job studying today!', style: TextStyle(fontSize: 16)),
-            SizedBox(height: 16),
-            _buildSummaryRow(Icons.timer, 'Duration:', 
-                '$hours ${hours == 1 ? 'hour' : 'hours'} $remainingMinutes minutes'),
-            SizedBox(height: 8),
-            _buildSummaryRow(Icons.today, 'Date:', 
-                DateFormat('MMMM d, y').format(today)),
-            SizedBox(height: 8),
-            if (_currentStreak > 0)
-              _buildSummaryRow(Icons.local_fire_department, 'Current streak:', 
-                  '$_currentStreak ${_currentStreak == 1 ? 'day' : 'days'}'),
-            SizedBox(height: 16),
-            Text('Keep up the good work!', 
-                style: TextStyle(fontStyle: FontStyle.italic)),
-          ],
+        content: Container(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Great job studying today!', style: TextStyle(fontSize: 16)),
+              SizedBox(height: 16),
+              _buildSummaryRow(Icons.timer, 'Duration:', 
+                  '$hours ${hours == 1 ? 'hour' : 'hours'} $remainingMinutes minutes'),
+              SizedBox(height: 8),
+              _buildSummaryRow(Icons.today, 'Date:', 
+                  DateFormat('MMMM d, y').format(today)),
+              SizedBox(height: 8),
+              if (_currentStreak > 0)
+                _buildSummaryRow(Icons.local_fire_department, 'Current streak:', 
+                    '$_currentStreak ${_currentStreak == 1 ? 'day' : 'days'}'),
+              SizedBox(height: 16),
+              Text('Keep up the good work!', 
+                  style: TextStyle(fontStyle: FontStyle.italic)),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -378,12 +387,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildSummaryRow(IconData icon, String label, String value) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon, size: 20, color: Colors.grey[600]),
         SizedBox(width: 8),
         Text(label, style: TextStyle(fontWeight: FontWeight.bold)),
         SizedBox(width: 8),
-        Text(value),
+        Flexible(
+          child: Text(
+            value,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
       ],
     );
   }
