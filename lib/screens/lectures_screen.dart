@@ -275,53 +275,64 @@ class _LecturesScreenState extends State<LecturesScreen> {
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
           title: Text('Add Custom Playlist'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                DropdownButtonFormField<String>(
-                  decoration: InputDecoration(
-                    labelText: 'Select Subject',
-                    border: OutlineInputBorder(),
+          content: Container(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    child: DropdownButtonFormField<String>(
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        labelText: 'Select Subject',
+                        border: OutlineInputBorder(),
+                      ),
+                      value: _selectedSubject,
+                      items: _subjects.map((subject) {
+                        return DropdownMenuItem(
+                          value: subject.name,
+                          child: Text(
+                            subject.name,
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedSubject = value;
+                        });
+                      },
+                    ),
                   ),
-                  value: _selectedSubject,
-                  items: _subjects.map((subject) {
-                    return DropdownMenuItem(
-                      value: subject.name,
-                      child: Text(subject.name),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    setState(() {
-                      _selectedSubject = value;
-                    });
-                  },
-                ),
-                SizedBox(height: 16),
-                TextField(
-                  controller: _customTitleController,
-                  decoration: InputDecoration(
-                    labelText: 'Playlist Title',
-                    border: OutlineInputBorder(),
+                  SizedBox(height: 16),
+                  TextField(
+                    controller: _customTitleController,
+                    decoration: InputDecoration(
+                      labelText: 'Playlist Title',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
-                ),
-                SizedBox(height: 16),
-                TextField(
-                  controller: _customUrlController,
-                  decoration: InputDecoration(
-                    labelText: 'YouTube URL',
-                    border: OutlineInputBorder(),
+                  SizedBox(height: 16),
+                  TextField(
+                    controller: _customUrlController,
+                    decoration: InputDecoration(
+                      labelText: 'YouTube URL',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
-                ),
-                SizedBox(height: 16),
-                TextField(
-                  controller: _customChannelController,
-                  decoration: InputDecoration(
-                    labelText: 'Channel Name',
-                    border: OutlineInputBorder(),
+                  SizedBox(height: 16),
+                  TextField(
+                    controller: _customChannelController,
+                    decoration: InputDecoration(
+                      labelText: 'Channel Name',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           actions: [

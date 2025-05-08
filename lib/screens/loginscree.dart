@@ -157,27 +157,34 @@ class _LoginScreenState extends State<LoginScreen> {
                         
                         // Remember Me & Forgot Password
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Row(
-                              children: [
-                                Checkbox(
-                                  value: _rememberMe,
-                                  onChanged: (value) {
-                                    setState(() {
-                                      _rememberMe = value!;
-                                    });
-                                  },
-                                  activeColor: Colors.blue,
-                                ),
-                                Text(
-                                  'Remember me',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 14,
-                                    color: Colors.grey[600],
+                            Expanded(
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  SizedBox(
+                                    width: 24,
+                                    child: Checkbox(
+                                      value: _rememberMe,
+                                      onChanged: (value) {
+                                        setState(() {
+                                          _rememberMe = value!;
+                                        });
+                                      },
+                                      activeColor: Colors.blue,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                  Flexible(
+                                    child: Text(
+                                      'Remember me',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 14,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                             TextButton(
                               onPressed: () {
