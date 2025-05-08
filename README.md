@@ -1,4 +1,4 @@
-📚 StudySphere – Your Personal AI-Powered Learning Companion
+#📚 StudySphere – Your Personal AI-Powered Learning Companion
 
 StudySphere is a smart, all-in-one learning productivity app designed to supercharge your study routines, improve focus, and help you reach your academic and career goals. Whether you're preparing for exams, exploring new topics, or collaborating in study groups – StudySphere is your ultimate companion.. A Flutter-based study collaboration application that helps students connect, learn, and grow together.
 
