@@ -43,7 +43,7 @@ class _CareerScreenState extends State<CareerScreen> {
     );
 
     final headers = {
-      'X-RapidAPI-Key': '68c38f446emshe123d5f890926adp191018jsndf152c62a366',
+      'X-RapidAPI-Key': 'ba7d39294emsh3a2890a4e621979p166ca7jsn409398fb5739',
       'X-RapidAPI-Host': 'jobs-api14.p.rapidapi.com',
     };
 
